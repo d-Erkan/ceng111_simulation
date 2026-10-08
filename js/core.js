@@ -1,13 +1,17 @@
 /*
- * Von Neumann Machine Simulator: core (ISA, machine, assembler, binary loader).
+ * Von Neumann Machine Simulator: core (instruction set, machine, assembler).
  *
- * Pure logic, no DOM. Works in the browser (window.VNCore) and in Node (require) so it can be unit-tested.
+ * Pure logic, no DOM. Works in the browser (window.VNCore) and in Node (require) so it can be unit-tested
+ * and reused to generate exam questions and answer keys.
  *
- * The machine: 8-bit words, 32 memory cells, one accumulator (AC).
- * Instruction word = 3-bit opcode + 5-bit address field:   ooo aaaaa
- * I/O is memory-mapped: reading cell 30 takes the next input value, writing cell 31 prints a value.
+ * The machine follows the course textbook (Schneider & Gersting, "Invitation to Computer Science"):
+ *   - 16 memory cells, 8 bits each (address = 4 bits)
+ *   - instruction word = 4-bit op code + 4-bit address field:   oooo aaaa
+ *   - one register R, condition codes GT / EQ / LT (set by COMPARE)
+ *   - registers PC, IR, MAR, MDR
+ *   - numbers are 8-bit two's complement (−128 … 127)
  *
- * To change the instruction set (e.g. to match the lecture notes), edit INSTRUCTIONS and EXEC_PLANS below.
+ * To change the instruction set, edit INSTRUCTIONS and EXEC_PLANS below.
  */
 (function (root, factory) {
   const api = factory();
@@ -17,39 +21,86 @@
   'use strict';
 
   const WORD_BITS = 8;
-  const OPCODE_BITS = 3;
-  const ADDR_BITS = 5;
-  const MEM_SIZE = 1 << ADDR_BITS; // 32 cells
+  const OPCODE_BITS = 4;
+  const ADDR_BITS = 4;
+  const MEM_SIZE = 1 << ADDR_BITS; // 16 cells
   const WORD_MASK = (1 << WORD_BITS) - 1;
   const ADDR_MASK = MEM_SIZE - 1;
   const SIGN_BIT = 1 << (WORD_BITS - 1);
-  const IN_ADDR = MEM_SIZE - 2; // 30
-  const OUT_ADDR = MEM_SIZE - 1; // 31
+  const MIN_VALUE = -(1 << (WORD_BITS - 1)); // -128
+  const MAX_VALUE = (1 << (WORD_BITS - 1)) - 1; // 127
 
+  // Op codes and meanings as in the textbook's instruction set.
   const INSTRUCTIONS = [
-    { opcode: 0b000, mnemonic: 'HLT', operand: false, rtl: 'stop', summary: 'Halt: stop the machine.' },
-    { opcode: 0b001, mnemonic: 'LDA', operand: true, rtl: 'AC ← M[a]', summary: 'Load: copy memory cell a into AC.' },
-    { opcode: 0b010, mnemonic: 'STA', operand: true, rtl: 'M[a] ← AC', summary: 'Store: copy AC into memory cell a.' },
-    { opcode: 0b011, mnemonic: 'ADD', operand: true, rtl: 'AC ← AC + M[a]', summary: 'Add memory cell a to AC.' },
-    { opcode: 0b100, mnemonic: 'SUB', operand: true, rtl: 'AC ← AC − M[a]', summary: 'Subtract memory cell a from AC.' },
-    { opcode: 0b101, mnemonic: 'JMP', operand: true, rtl: 'PC ← a', summary: 'Jump: continue execution at address a.' },
-    { opcode: 0b110, mnemonic: 'JZ', operand: true, rtl: 'if AC = 0: PC ← a', summary: 'Jump to a if AC is zero (Z = 1).' },
-    { opcode: 0b111, mnemonic: 'JN', operand: true, rtl: 'if AC < 0: PC ← a', summary: 'Jump to a if AC is negative (N = 1, leftmost bit of AC is 1).' },
+    { opcode: 0, name: 'LOAD', meaning: 'CON(X) → R', summary: 'Load register R with the contents of memory cell X.' },
+    { opcode: 1, name: 'STORE', meaning: 'R → CON(X)', summary: 'Store register R into memory cell X.' },
+    { opcode: 2, name: 'CLEAR', meaning: '0 → CON(X)', summary: 'Set memory cell X to 0.' },
+    { opcode: 3, name: 'ADD', meaning: 'R + CON(X) → R', summary: 'Add the contents of memory cell X to R.' },
+    { opcode: 4, name: 'INCREMENT', meaning: 'CON(X) + 1 → CON(X)', summary: 'Add 1 to memory cell X.' },
+    { opcode: 5, name: 'SUBTRACT', meaning: 'R − CON(X) → R', summary: 'Subtract the contents of memory cell X from R.' },
+    { opcode: 6, name: 'DECREMENT', meaning: 'CON(X) − 1 → CON(X)', summary: 'Subtract 1 from memory cell X.' },
+    {
+      opcode: 7,
+      name: 'COMPARE',
+      meaning: 'compare CON(X) with R',
+      summary: 'Set the condition codes: GT = 1 if CON(X) > R, EQ = 1 if CON(X) = R, LT = 1 if CON(X) < R (the other two become 0).',
+    },
+    { opcode: 8, name: 'JUMP', meaning: 'X → PC', summary: 'Jump: the next instruction is taken from cell X.' },
+    { opcode: 9, name: 'JUMPGT', meaning: 'if GT = 1 then X → PC', summary: 'Jump to X if the last COMPARE found CON(X) > R.' },
+    { opcode: 10, name: 'JUMPEQ', meaning: 'if EQ = 1 then X → PC', summary: 'Jump to X if the last COMPARE found them equal.' },
+    { opcode: 11, name: 'JUMPLT', meaning: 'if LT = 1 then X → PC', summary: 'Jump to X if the last COMPARE found CON(X) < R.' },
+    { opcode: 12, name: 'JUMPNEQ', meaning: 'if EQ = 0 then X → PC', summary: 'Jump to X if the last COMPARE found them different.' },
+    { opcode: 13, name: 'IN', meaning: 'input → CON(X)', summary: 'Read the next input value into memory cell X.' },
+    { opcode: 14, name: 'OUT', meaning: 'CON(X) → output', summary: 'Print the contents of memory cell X.' },
+    { opcode: 15, name: 'HALT', meaning: 'stop', summary: 'Stop the machine. (The address field is not used.)', noOperand: true },
   ];
-  const BY_MNEMONIC = Object.fromEntries(INSTRUCTIONS.map((i) => [i.mnemonic, i]));
+  const BY_NAME = Object.fromEntries(INSTRUCTIONS.map((i) => [i.name, i]));
 
-  // Micro-operations run in the EXECUTE phase of each instruction (after the shared FETCH + DECODE).
+  // Micro-operations of the EXECUTE phase. Each entry is [microOp, parameter].
   const EXEC_PLANS = {
-    HLT: ['EXEC_HALT'],
-    LDA: ['EXEC_MAR_IR', 'EXEC_READ', 'EXEC_AC_MDR'],
-    STA: ['EXEC_MAR_IR', 'EXEC_MDR_AC', 'EXEC_WRITE'],
-    ADD: ['EXEC_MAR_IR', 'EXEC_READ', 'EXEC_ADD'],
-    SUB: ['EXEC_MAR_IR', 'EXEC_READ', 'EXEC_SUB'],
-    JMP: ['EXEC_JMP'],
-    JZ: ['EXEC_JZ'],
-    JN: ['EXEC_JN'],
+    LOAD: [['ADDR_TO_MAR'], ['FETCH'], ['MDR_TO_R']],
+    STORE: [['ADDR_TO_MAR'], ['R_TO_MDR'], ['STORE']],
+    CLEAR: [['ADDR_TO_MAR'], ['ZERO_TO_MDR'], ['STORE']],
+    ADD: [['ADDR_TO_MAR'], ['FETCH'], ['ALU_R', 'ADD']],
+    INCREMENT: [['ADDR_TO_MAR'], ['FETCH'], ['ALU_MDR', 'INC'], ['STORE']],
+    SUBTRACT: [['ADDR_TO_MAR'], ['FETCH'], ['ALU_R', 'SUB']],
+    DECREMENT: [['ADDR_TO_MAR'], ['FETCH'], ['ALU_MDR', 'DEC'], ['STORE']],
+    COMPARE: [['ADDR_TO_MAR'], ['FETCH'], ['ALU_COMPARE']],
+    JUMP: [['JUMP']],
+    JUMPGT: [['JUMP_IF', 'GT']],
+    JUMPEQ: [['JUMP_IF', 'EQ']],
+    JUMPLT: [['JUMP_IF', 'LT']],
+    JUMPNEQ: [['JUMP_IF', 'NEQ']],
+    IN: [['ADDR_TO_MAR'], ['INPUT_TO_MDR'], ['STORE']],
+    OUT: [['ADDR_TO_MAR'], ['FETCH'], ['MDR_TO_OUTPUT']],
+    HALT: [['HALT']],
   };
-  const FETCH_PLAN = ['FETCH_MAR', 'FETCH_READ', 'FETCH_IR'];
+  const FETCH_PLAN = [['PC_TO_MAR'], ['FETCH'], ['MDR_TO_IR'], ['PC_INC']];
+
+  /** Short register-transfer text of a micro-operation, in the textbook's "source → destination" style. */
+  function microText(op, param) {
+    switch (op) {
+      case 'PC_TO_MAR': return 'PC → MAR';
+      case 'FETCH': return 'CON(MAR) → MDR   (fetch)';
+      case 'MDR_TO_IR': return 'MDR → IR';
+      case 'PC_INC': return 'PC + 1 → PC';
+      case 'DECODE': return 'decode IR';
+      case 'ADDR_TO_MAR': return 'IR(address) → MAR';
+      case 'MDR_TO_R': return 'MDR → R';
+      case 'R_TO_MDR': return 'R → MDR';
+      case 'ZERO_TO_MDR': return '0 → MDR';
+      case 'STORE': return 'MDR → CON(MAR)   (store)';
+      case 'ALU_R': return param === 'ADD' ? 'R + MDR → R' : 'R − MDR → R';
+      case 'ALU_MDR': return param === 'INC' ? 'MDR + 1 → MDR' : 'MDR − 1 → MDR';
+      case 'ALU_COMPARE': return 'compare MDR with R → GT, EQ, LT';
+      case 'JUMP': return 'IR(address) → PC';
+      case 'JUMP_IF': return param === 'NEQ' ? 'if EQ = 0 then IR(address) → PC' : `if ${param} = 1 then IR(address) → PC`;
+      case 'INPUT_TO_MDR': return 'input → MDR';
+      case 'MDR_TO_OUTPUT': return 'MDR → output';
+      case 'HALT': return 'stop';
+      default: return op;
+    }
+  }
 
   // ---------------------------------------------------------------------------------------------------------------
   // Helpers
@@ -57,39 +108,41 @@
   function toBin(value, bits) {
     return (value >>> 0).toString(2).padStart(bits, '0').slice(-bits);
   }
+  /** "0011 0101": a word in binary with a space between op code and address field. */
+  function wordBin(word) {
+    const b = toBin(word, WORD_BITS);
+    return `${b.slice(0, OPCODE_BITS)} ${b.slice(OPCODE_BITS)}`;
+  }
   function toSigned(word) {
     return word & SIGN_BIT ? word - (1 << WORD_BITS) : word;
   }
   function opcodeOf(word) {
     return (word >> ADDR_BITS) & ((1 << OPCODE_BITS) - 1);
   }
-  function operandOf(word) {
+  function addressOf(word) {
     return word & ADDR_MASK;
   }
-  function encode(opcode, operand) {
-    return ((opcode << ADDR_BITS) | (operand & ADDR_MASK)) & WORD_MASK;
+  function encode(opcode, address) {
+    return ((opcode << ADDR_BITS) | (address & ADDR_MASK)) & WORD_MASK;
   }
   function disassemble(word) {
     const ins = INSTRUCTIONS[opcodeOf(word)];
-    return ins.operand ? `${ins.mnemonic} ${operandOf(word)}` : ins.mnemonic;
+    return ins.noOperand ? ins.name : `${ins.name} ${addressOf(word)}`;
   }
-  /** Parses 42, -3, 0b101, 0x2A. Returns null if the text is not a number. */
+  /** Parses 42, -3, 0b101. Returns null if the text is not a number. */
   function parseNumber(text) {
-    const m = /^([+-]?)(?:0b([01]+)|0x([0-9a-f]+)|(\d+))$/i.exec(String(text).trim());
+    const m = /^([+-]?)(?:0b([01]+)|(\d+))$/i.exec(String(text).trim());
     if (!m) return null;
-    let v;
-    if (m[2] !== undefined) v = parseInt(m[2], 2);
-    else if (m[3] !== undefined) v = parseInt(m[3], 16);
-    else v = parseInt(m[4], 10);
+    const v = m[2] !== undefined ? parseInt(m[2], 2) : parseInt(m[3], 10);
     return m[1] === '-' ? -v : v;
   }
-  /** Parses "12, -3 0x10" into word values. Returns { values, errors }. */
+  /** Parses an input list such as "5, 7, -1". Returns { values (as 8-bit words), errors }. */
   function parseValueList(text) {
     const values = [];
     const errors = [];
     for (const tok of String(text).split(/[\s,;]+/).filter(Boolean)) {
       const v = parseNumber(tok);
-      if (v === null || v < -(1 << (WORD_BITS - 1)) || v > WORD_MASK) errors.push(`"${tok}" is not a value between −128 and 255`);
+      if (v === null || v < MIN_VALUE || v > MAX_VALUE) errors.push(`"${tok}" is not a whole number between ${MIN_VALUE} and ${MAX_VALUE}`);
       else values.push(v & WORD_MASK);
     }
     return { values, errors };
@@ -97,7 +150,7 @@
 
   // Tokens embedded in explanation texts; the UI renders them in the selected number format.
   const W = (v) => `{w:${v}}`; // 8-bit word
-  const A = (v) => `{a:${v}}`; // 5-bit address
+  const A = (v) => `{a:${v}}`; // 4-bit address
   const port = (label, value, kind) => ({ label, value, kind }); // kind: 'word' | 'addr' | 'bit' | 'opcode' | 'text'
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -110,18 +163,19 @@
       this.reset();
     }
 
-    /** CPU reset: clears registers, output and input position. Memory is kept. */
+    /** CPU reset: clears registers, condition codes, output and input position. Memory is kept. */
     reset() {
       this.pc = 0;
       this.mar = 0;
       this.mdr = 0;
       this.ir = 0;
-      this.ac = 0;
-      this.z = true;
-      this.n = false;
+      this.r = 0;
+      this.gt = 0;
+      this.eq = 0;
+      this.lt = 0;
       this.halted = false;
-      this.queue = []; // pending micro-ops of the current instruction: [{ op, phase }]
-      this.decoded = null; // { opcode, operand, mnemonic } once DECODE has run
+      this.queue = []; // pending micro-ops of the current instruction: [{ op, param, phase }]
+      this.decoded = null; // { opcode, address, name } once DECODE has run
       this.output = [];
       this.inputPos = 0;
       this.instructionCount = 0;
@@ -142,14 +196,14 @@
       return this.queue.length === 0;
     }
 
-    /** Name of the phase the next micro-step belongs to. */
-    get nextPhase() {
-      if (this.halted) return 'HALTED';
-      return this.queue.length ? this.queue[0].phase : 'FETCH';
+    /** The micro-operation that the next microStep() will execute: { op, param, phase }. */
+    get nextMicro() {
+      if (this.halted) return null;
+      return this.queue.length ? this.queue[0] : { op: FETCH_PLAN[0][0], phase: 'FETCH' };
     }
 
     registers() {
-      return { pc: this.pc, mar: this.mar, mdr: this.mdr, ir: this.ir, ac: this.ac, z: this.z, n: this.n };
+      return { pc: this.pc, mar: this.mar, mdr: this.mdr, ir: this.ir, r: this.r, gt: this.gt, eq: this.eq, lt: this.lt };
     }
 
     snapshot() {
@@ -183,52 +237,28 @@
       return m;
     }
 
-    setAC(value) {
-      this.ac = value & WORD_MASK;
-      this.z = this.ac === 0;
-      this.n = (this.ac & SIGN_BIT) !== 0;
-    }
-
-    /** Memory read through the bus. Returns { value, io } or { blocked: true } when input is needed. */
-    busRead(addr) {
-      if (addr === IN_ADDR) {
-        if (this.inputPos >= this.input.length) return { blocked: true };
-        const value = this.input[this.inputPos++];
-        this.mem[IN_ADDR] = value;
-        return { value, io: 'IN' };
-      }
-      return { value: this.mem[addr] };
-    }
-
-    busWrite(addr, value) {
-      this.mem[addr] = value & WORD_MASK;
-      if (addr === OUT_ADDR) {
-        this.output.push(value & WORD_MASK);
-        return { io: 'OUT' };
-      }
-      return {};
-    }
-
     /**
      * Executes one micro-operation (one clock step) and returns a record describing it, or null when halted.
-     * A record with `blocked: 'input'` means nothing happened because the program wants input that is not there yet.
+     * A record with `blocked: 'input'` means nothing happened: the program wants an input value that is not there.
      */
     microStep() {
       if (this.halted) return null;
       if (this.queue.length === 0) {
-        this.queue = FETCH_PLAN.map((op) => ({ op, phase: 'FETCH' })).concat({ op: 'DECODE', phase: 'DECODE' });
+        this.queue = FETCH_PLAN.map(([op, param]) => ({ op, param, phase: 'FETCH' })).concat({ op: 'DECODE', phase: 'DECODE' });
         this.decoded = null;
       }
       const item = this.queue[0];
       const before = this.registers();
       const memBefore = this.mem.slice();
-      const rec = MICRO_OPS[item.op].call(this);
+      const rec = MICRO_OPS[item.op].call(this, item.param);
+      rec.rtl = microText(item.op, item.param);
       if (rec.blocked) return rec;
 
       this.queue.shift();
       this.stepCount += 1;
       const after = this.registers();
       rec.op = item.op;
+      rec.param = item.param;
       rec.phase = item.phase;
       rec.step = this.stepCount;
       rec.changes = {};
@@ -258,306 +288,332 @@
       return records;
     }
 
-    /** Runs until HLT, blocked input, or maxSteps micro-steps. Returns { reason, steps }. */
-    run(maxSteps = 10000) {
-      let steps = 0;
-      while (!this.halted && steps < maxSteps) {
-        const rec = this.microStep();
-        if (rec.blocked) return { reason: 'input', steps };
-        steps += 1;
+    /** Runs until HALT, missing input, or maxInstructions. Returns { reason, instructions }. */
+    run(maxInstructions = 1000) {
+      const start = this.instructionCount;
+      while (!this.halted && this.instructionCount - start < maxInstructions) {
+        const recs = this.stepInstruction();
+        if (recs.length && recs[recs.length - 1].blocked) return { reason: 'input', instructions: this.instructionCount - start };
       }
-      return { reason: this.halted ? 'halted' : 'limit', steps };
+      return { reason: this.halted ? 'halted' : 'limit', instructions: this.instructionCount - start };
     }
   }
 
-  // Each micro-op mutates the machine and returns what the UI needs to show:
-  //   rtl    register-transfer notation, e.g. "MAR ← PC"
-  //   text   plain-language explanation (with {w:..}/{a:..} value tokens)
-  //   active components that take part; wires: diagram wires carrying data
-  //   bus    values on the buses: { internal, address, data, control }
-  //   io     per-component inputs and outputs
-  function memoryAccess(m, kind, phase) {
-    const addr = m.mar;
-    if (kind === 'READ') {
-      const r = m.busRead(addr);
-      if (r.blocked) {
-        return {
-          blocked: 'input',
-          rtl: 'MDR ← M[MAR]',
-          text: `The program reads the input port (address ${A(IN_ADDR)}), but there are no input values left. Add a value in the Input box and step again.`,
-        };
-      }
-      m.mdr = r.value;
-      const ioComp = r.io ? [r.io] : [];
-      return {
-        io: r.io,
-        active: ['CU', 'MAR', 'MEM', 'MDR', ...ioComp],
-        wires: ['bus-ctrl', 'bus-addr', 'bus-data', ...(r.io ? ['bus-io'] : [])],
-        bus: { address: addr, data: r.value, control: 'READ' },
-        ioTable: [
-          { component: 'CU', inputs: [], outputs: [port('control bus', 'READ', 'text')] },
-          { component: 'MAR', inputs: [], outputs: [port('address bus', addr, 'addr')] },
-          {
-            component: r.io ? 'IN' : 'MEM',
-            inputs: [port('address', addr, 'addr'), port('control', 'READ', 'text')],
-            outputs: [port('data bus', r.value, 'word')],
-          },
-          { component: 'MDR', inputs: [port('data bus', r.value, 'word')], outputs: [port('new value', r.value, 'word')] },
-        ],
-        text: r.io
-          ? `${phase}: MAR holds ${A(addr)}, the input port. The control unit sends READ; the input device puts the next input value ${W(r.value)} on the data bus and MDR stores it.`
-          : `${phase}: the control unit sends READ on the control bus. MAR puts address ${A(addr)} on the address bus, memory puts the contents of that cell, ${W(r.value)}, on the data bus, and MDR stores it.`,
-      };
-    }
-    const value = m.mdr;
-    const w = m.busWrite(addr, value);
-    return {
-      io: w.io,
-      active: ['CU', 'MAR', 'MDR', 'MEM', ...(w.io ? [w.io] : [])],
-      wires: ['bus-ctrl', 'bus-addr', 'bus-data', ...(w.io ? ['bus-io'] : [])],
-      bus: { address: addr, data: value, control: 'WRITE' },
-      ioTable: [
-        { component: 'CU', inputs: [], outputs: [port('control bus', 'WRITE', 'text')] },
-        { component: 'MAR', inputs: [], outputs: [port('address bus', addr, 'addr')] },
-        { component: 'MDR', inputs: [], outputs: [port('data bus', value, 'word')] },
-        {
-          component: w.io ? 'OUT' : 'MEM',
-          inputs: [port('address', addr, 'addr'), port('data', value, 'word'), port('control', 'WRITE', 'text')],
-          outputs: w.io ? [port('printed', value, 'word')] : [port(`cell ${addr}`, value, 'word')],
-        },
-      ],
-      text: w.io
-        ? `The control unit sends WRITE. MAR holds ${A(addr)}, the output port, so the value in MDR, ${W(value)}, is sent to the output device (printed).`
-        : `The control unit sends WRITE on the control bus. MAR puts address ${A(addr)} on the address bus, MDR puts ${W(value)} on the data bus, and memory stores it in cell ${A(addr)}. The old value is overwritten.`,
-    };
-  }
+  // Each micro-op changes the machine and returns what the UI shows:
+  //   text      plain-language explanation (with {w:..}/{a:..} value tokens)
+  //   active    components taking part; wires: diagram wires carrying data
+  //   bus       values on the buses: { internal, internalKind, address, data, control, io }
+  //   ioTable   inputs and outputs of each component
+  const IR_ADDR_TEXT = `the address field of IR (its rightmost ${ADDR_BITS} bits)`;
 
-  function aluOp(m, op) {
-    const a = m.ac;
-    const b = m.mdr;
-    const raw = op === 'ADD' ? a + b : a - b;
-    m.setAC(raw);
-    const wrapped = raw < 0 || raw > WORD_MASK;
-    const sym = op === 'ADD' ? '+' : '−';
-    return {
-      rtl: `AC ← AC ${sym} MDR`,
-      active: ['MDR', 'ALU', 'AC', 'FLAGS', 'CU'],
-      wires: ['w-mdr-bus', 'bus-internal', 'w-bus-alu', 'w-ac-alu', 'w-alu-ac'],
-      bus: { internal: b },
-      ioTable: [
-        { component: 'CU', inputs: [], outputs: [port('ALU operation', op, 'text')] },
-        { component: 'MDR', inputs: [], outputs: [port('internal bus', b, 'word')] },
-        {
-          component: 'ALU',
-          inputs: [port('A (from AC)', a, 'word'), port('B (from MDR)', b, 'word'), port('operation', op, 'text')],
-          outputs: [port('result', m.ac, 'word'), port('Z', m.z ? 1 : 0, 'bit'), port('N', m.n ? 1 : 0, 'bit')],
-        },
-        { component: 'AC', inputs: [port('ALU result', m.ac, 'word')], outputs: [port('new value', m.ac, 'word')] },
-      ],
-      text:
-        `The control unit tells the ALU to ${op === 'ADD' ? 'add' : 'subtract'}. Input A is AC (${W(a)}), input B is MDR (${W(b)}). ` +
-        `The result ${W(m.ac)} goes back into AC.` +
-        (wrapped ? ` The true result (${raw}) does not fit in 8 bits, so it wraps around (only the lowest 8 bits are kept).` : '') +
-        ` Flags: Z = ${m.z ? 1 : 0} (${m.z ? 'result is zero' : 'result is not zero'}), N = ${m.n ? 1 : 0} (leftmost bit ${m.n ? 'is 1: negative in two’s complement' : 'is 0'}).`,
-    };
+  function aluResult(op, a, b) {
+    const sa = toSigned(a);
+    const raw = op === 'ADD' ? sa + toSigned(b) : op === 'SUB' ? sa - toSigned(b) : op === 'INC' ? sa + 1 : sa - 1;
+    return { value: raw & WORD_MASK, overflow: raw < MIN_VALUE || raw > MAX_VALUE, raw };
   }
-
-  function conditionalJump(m, flag) {
-    const target = operandOf(m.ir);
-    const set = flag === 'Z' ? m.z : m.n;
-    const oldPc = m.pc;
-    if (set) m.pc = target;
-    const meaning = flag === 'Z' ? 'AC is zero' : 'AC is negative';
-    return {
-      rtl: `if ${flag} = 1: PC ← IR[address]`,
-      active: set ? ['CU', 'FLAGS', 'IR', 'PC'] : ['CU', 'FLAGS'],
-      wires: set ? ['w-ir-bus', 'bus-internal', 'w-pc-bus'] : [],
-      bus: set ? { internal: target } : {},
-      ioTable: [
-        { component: 'FLAGS', inputs: [], outputs: [port(flag, set ? 1 : 0, 'bit')] },
-        {
-          component: 'CU',
-          inputs: [port(flag, set ? 1 : 0, 'bit')],
-          outputs: [port('decision', set ? 'jump' : 'no jump', 'text')],
-        },
-        set
-          ? { component: 'PC', inputs: [port('from IR', target, 'addr')], outputs: [port('new value', target, 'addr')] }
-          : { component: 'PC', inputs: [], outputs: [port('unchanged', oldPc, 'addr')] },
-      ],
-      text: set
-        ? `The control unit checks flag ${flag}: it is 1 (${meaning}), so the jump is taken. The address field of IR, ${A(target)}, is copied into PC. The next fetch reads from there.`
-        : `The control unit checks flag ${flag}: it is 0 (${meaning.replace('is', 'is not')}), so no jump. PC keeps ${A(oldPc)}, already pointing at the next instruction.`,
-    };
-  }
+  const OVERFLOW_TEXT = (raw) =>
+    ` The true result ${raw} does not fit in ${WORD_BITS} bits (${MIN_VALUE} … ${MAX_VALUE}), so it wraps around: this is called overflow.`;
 
   const MICRO_OPS = {
-    FETCH_MAR() {
+    PC_TO_MAR() {
       const pc = this.pc;
       this.mar = pc;
       return {
-        rtl: 'MAR ← PC',
         active: ['PC', 'MAR', 'CU'],
         wires: ['w-pc-bus', 'bus-internal', 'w-mar-bus'],
-        bus: { internal: pc },
+        bus: { internal: pc, internalKind: 'addr' },
         ioTable: [
-          { component: 'PC', inputs: [], outputs: [port('internal bus', pc, 'addr')] },
-          { component: 'MAR', inputs: [port('internal bus', pc, 'addr')], outputs: [port('new value', pc, 'addr')] },
+          { component: 'PC', inputs: [], outputs: [port('to bus', pc, 'addr')] },
+          { component: 'MAR', inputs: [port('from bus', pc, 'addr')], outputs: [port('new value', pc, 'addr')] },
         ],
-        text: `A new instruction cycle starts. PC holds the address of the next instruction, ${A(pc)}. It is copied into the Memory Address Register (MAR), the only register connected to memory's address lines.`,
+        text: `A new instruction starts. PC holds the address of the next instruction, ${A(pc)}. It is copied into the Memory Address Register (MAR), because MAR is the only register connected to memory's address lines.`,
       };
     },
-    FETCH_READ() {
-      const oldPc = this.pc;
-      const r = memoryAccess(this, 'READ', 'Fetch');
-      if (r.blocked) return r;
-      this.pc = (oldPc + 1) & ADDR_MASK;
-      r.rtl = 'MDR ← M[MAR],  PC ← PC + 1';
-      r.active.push('PC');
-      r.ioTable.push({ component: 'PC', inputs: [port('old value', oldPc, 'addr')], outputs: [port('+1', this.pc, 'addr')] });
-      r.text += ` At the same time, PC is incremented to ${A(this.pc)} so it points to the next instruction.`;
-      return r;
+    FETCH() {
+      const addr = this.mar;
+      const value = this.mem[addr];
+      this.mdr = value;
+      return {
+        active: ['CU', 'MAR', 'MEM', 'MDR'],
+        wires: ['bus-ctrl', 'bus-addr', 'bus-data'],
+        bus: { address: addr, data: value, control: 'FETCH' },
+        ioTable: [
+          { component: 'CU', inputs: [], outputs: [port('signal to memory', 'FETCH', 'text')] },
+          { component: 'MAR', inputs: [], outputs: [port('address', addr, 'addr')] },
+          { component: 'MEM', inputs: [port('address', addr, 'addr'), port('signal', 'FETCH', 'text')], outputs: [port(`contents of cell ${addr}`, value, 'word')] },
+          { component: 'MDR', inputs: [port('from memory', value, 'word')], outputs: [port('new value', value, 'word')] },
+        ],
+        text: `The fetch/store controller sends a FETCH signal. Memory reads the cell whose address is in MAR (${A(addr)}) and puts its contents, ${W(value)}, into the Memory Data Register (MDR). The memory cell itself does not change.`,
+      };
     },
-    FETCH_IR() {
+    MDR_TO_IR() {
       const v = this.mdr;
       this.ir = v;
       return {
-        rtl: 'IR ← MDR',
         active: ['MDR', 'IR', 'CU'],
         wires: ['w-mdr-bus', 'bus-internal', 'w-ir-bus'],
-        bus: { internal: v },
+        bus: { internal: v, internalKind: 'word' },
         ioTable: [
-          { component: 'MDR', inputs: [], outputs: [port('internal bus', v, 'word')] },
-          { component: 'IR', inputs: [port('internal bus', v, 'word')], outputs: [port('new value', v, 'word')] },
+          { component: 'MDR', inputs: [], outputs: [port('to bus', v, 'word')] },
+          { component: 'IR', inputs: [port('from bus', v, 'word')], outputs: [port('new value', v, 'word')] },
         ],
-        text: `The word just read, ${W(v)}, is copied from MDR into the Instruction Register (IR). The fetch phase is over: IR now holds the instruction to be executed.`,
+        text: `The word just fetched, ${W(v)}, is an instruction, so it is copied from MDR into the Instruction Register (IR).`,
+      };
+    },
+    PC_INC() {
+      const old = this.pc;
+      this.pc = (old + 1) & ADDR_MASK;
+      return {
+        active: ['PC', 'INC', 'CU'],
+        wires: ['w-pc-inc'],
+        bus: {},
+        ioTable: [
+          { component: 'INC', inputs: [port('PC', old, 'addr')], outputs: [port('PC + 1', this.pc, 'addr')] },
+          { component: 'PC', inputs: [port('from +1 circuit', this.pc, 'addr')], outputs: [port('new value', this.pc, 'addr')] },
+        ],
+        text:
+          `PC is increased by 1 (from ${A(old)} to ${A(this.pc)}), so it points to the next instruction in memory. The fetch phase is over.` +
+          (old === ADDR_MASK ? ` (PC was at the last cell, ${MEM_SIZE - 1}, so it wraps around to 0.)` : ''),
       };
     },
     DECODE() {
       const opcode = opcodeOf(this.ir);
-      const operand = operandOf(this.ir);
+      const address = addressOf(this.ir);
       const ins = INSTRUCTIONS[opcode];
-      this.decoded = { opcode, operand, mnemonic: ins.mnemonic };
-      const plan = EXEC_PLANS[ins.mnemonic];
-      this.queue.push(...plan.map((op) => ({ op, phase: 'EXECUTE' })));
+      this.decoded = { opcode, address, name: ins.name };
+      const plan = EXEC_PLANS[ins.name];
+      this.queue.push(...plan.map(([op, param]) => ({ op, param, phase: 'EXECUTE' })));
+      const asText = ins.noOperand ? ins.name : `${ins.name} ${address}`;
       return {
-        rtl: 'decode IR',
         active: ['IR', 'CU'],
         wires: ['w-ir-cu'],
         bus: {},
         ioTable: [
-          { component: 'IR', inputs: [], outputs: [port('instruction', this.ir, 'word')] },
-          {
-            component: 'CU',
-            inputs: [port('instruction', this.ir, 'word')],
-            outputs: [
-              port('opcode', opcode, 'opcode'),
-              port('instruction', ins.mnemonic, 'text'),
-              ...(ins.operand ? [port('address field', operand, 'addr')] : []),
-            ],
-          },
+          { component: 'IR', inputs: [], outputs: [port('op code', opcode, 'opcode'), port('address field', address, 'addr')] },
+          { component: 'CU', inputs: [port('op code', opcode, 'opcode')], outputs: [port('instruction', asText, 'text')] },
         ],
         text:
-          `The control unit splits IR into the opcode (leftmost ${OPCODE_BITS} bits) = ${toBin(opcode, OPCODE_BITS)} and the address field (rightmost ${ADDR_BITS} bits) = ${A(operand)}. ` +
-          `Opcode ${toBin(opcode, OPCODE_BITS)} means ${ins.mnemonic}${ins.operand ? ' ' + operand : ''}: ${ins.summary} ` +
-          `The execute phase will take ${plan.length} step${plan.length > 1 ? 's' : ''}.`,
+          `The instruction decoder looks at the op code (leftmost ${OPCODE_BITS} bits of IR) = ${toBin(opcode, OPCODE_BITS)}, which means ${ins.name}. ` +
+          (ins.noOperand ? '' : `The address field (rightmost ${ADDR_BITS} bits) is ${A(address)}. `) +
+          `So the instruction is ${asText}: ${ins.summary} Its execute phase has ${plan.length} step${plan.length > 1 ? 's' : ''}.`,
       };
     },
-    EXEC_MAR_IR() {
-      const a = operandOf(this.ir);
+    ADDR_TO_MAR() {
+      const a = addressOf(this.ir);
       this.mar = a;
       return {
-        rtl: 'MAR ← IR[address]',
         active: ['IR', 'MAR', 'CU'],
         wires: ['w-ir-bus', 'bus-internal', 'w-mar-bus'],
-        bus: { internal: a },
+        bus: { internal: a, internalKind: 'addr' },
         ioTable: [
           { component: 'IR', inputs: [], outputs: [port('address field', a, 'addr')] },
-          { component: 'MAR', inputs: [port('internal bus', a, 'addr')], outputs: [port('new value', a, 'addr')] },
+          { component: 'MAR', inputs: [port('from bus', a, 'addr')], outputs: [port('new value', a, 'addr')] },
         ],
-        text: `The instruction needs the data in memory cell ${A(a)}, so the address field of IR (its rightmost ${ADDR_BITS} bits) is copied into MAR.`,
+        text: `The instruction works on memory cell ${A(a)}, so ${IR_ADDR_TEXT} is copied into MAR.`,
       };
     },
-    EXEC_READ() {
-      const r = memoryAccess(this, 'READ', 'Execute');
-      if (r.blocked) return r;
-      r.rtl = 'MDR ← M[MAR]';
-      return r;
-    },
-    EXEC_AC_MDR() {
+    MDR_TO_R() {
       const v = this.mdr;
-      this.setAC(v);
+      this.r = v;
       return {
-        rtl: 'AC ← MDR',
-        active: ['MDR', 'AC', 'FLAGS', 'CU'],
-        wires: ['w-mdr-bus', 'bus-internal', 'w-ac-bus'],
-        bus: { internal: v },
+        active: ['MDR', 'R', 'CU'],
+        wires: ['w-mdr-bus', 'bus-internal', 'w-r-bus'],
+        bus: { internal: v, internalKind: 'word' },
         ioTable: [
-          { component: 'MDR', inputs: [], outputs: [port('internal bus', v, 'word')] },
-          {
-            component: 'AC',
-            inputs: [port('internal bus', v, 'word')],
-            outputs: [port('new value', v, 'word'), port('Z', this.z ? 1 : 0, 'bit'), port('N', this.n ? 1 : 0, 'bit')],
-          },
+          { component: 'MDR', inputs: [], outputs: [port('to bus', v, 'word')] },
+          { component: 'R', inputs: [port('from bus', v, 'word')], outputs: [port('new value', v, 'word')] },
         ],
-        text: `The value from memory, ${W(v)}, is copied from MDR into the accumulator (AC). Flags are updated: Z = ${this.z ? 1 : 0}, N = ${this.n ? 1 : 0}.`,
+        text: `The value from memory, ${W(v)}, is copied from MDR into register R.`,
       };
     },
-    EXEC_MDR_AC() {
-      const v = this.ac;
+    R_TO_MDR() {
+      const v = this.r;
       this.mdr = v;
       return {
-        rtl: 'MDR ← AC',
-        active: ['AC', 'MDR', 'CU'],
-        wires: ['w-ac-bus', 'bus-internal', 'w-mdr-bus'],
-        bus: { internal: v },
+        active: ['R', 'MDR', 'CU'],
+        wires: ['w-r-bus', 'bus-internal', 'w-mdr-bus'],
+        bus: { internal: v, internalKind: 'word' },
         ioTable: [
-          { component: 'AC', inputs: [], outputs: [port('internal bus', v, 'word')] },
-          { component: 'MDR', inputs: [port('internal bus', v, 'word')], outputs: [port('new value', v, 'word')] },
+          { component: 'R', inputs: [], outputs: [port('to bus', v, 'word')] },
+          { component: 'MDR', inputs: [port('from bus', v, 'word')], outputs: [port('new value', v, 'word')] },
         ],
-        text: `To store AC (${W(v)}) in memory, it is first copied into the Memory Data Register (MDR), the only register connected to memory's data lines.`,
+        text: `To store R (${W(v)}) in memory, it is first copied into MDR, because MDR is the only register connected to memory's data lines.`,
       };
     },
-    EXEC_WRITE() {
-      const r = memoryAccess(this, 'WRITE', 'Execute');
-      r.rtl = 'M[MAR] ← MDR';
-      return r;
+    ZERO_TO_MDR() {
+      this.mdr = 0;
+      return {
+        active: ['MDR', 'CU'],
+        wires: [],
+        bus: {},
+        ioTable: [{ component: 'MDR', inputs: [port('value from control unit', 0, 'word')], outputs: [port('new value', 0, 'word')] }],
+        text: 'The control unit puts 0 into MDR, ready to be stored.',
+      };
     },
-    EXEC_ADD() {
-      return aluOp(this, 'ADD');
+    STORE() {
+      const addr = this.mar;
+      const value = this.mdr;
+      const old = this.mem[addr];
+      this.mem[addr] = value;
+      return {
+        active: ['CU', 'MAR', 'MDR', 'MEM'],
+        wires: ['bus-ctrl', 'bus-addr', 'bus-data'],
+        bus: { address: addr, data: value, control: 'STORE' },
+        ioTable: [
+          { component: 'CU', inputs: [], outputs: [port('signal to memory', 'STORE', 'text')] },
+          { component: 'MAR', inputs: [], outputs: [port('address', addr, 'addr')] },
+          { component: 'MDR', inputs: [], outputs: [port('data', value, 'word')] },
+          {
+            component: 'MEM',
+            inputs: [port('address', addr, 'addr'), port('data', value, 'word'), port('signal', 'STORE', 'text')],
+            outputs: [port(`new contents of cell ${addr}`, value, 'word')],
+          },
+        ],
+        text: `The fetch/store controller sends a STORE signal. The value in MDR, ${W(value)}, is written into the memory cell whose address is in MAR (${A(addr)}). The old contents (${W(old)}) are overwritten.`,
+      };
     },
-    EXEC_SUB() {
-      return aluOp(this, 'SUB');
+    ALU_R(op) {
+      const a = this.r;
+      const b = this.mdr;
+      const res = aluResult(op, a, b);
+      this.r = res.value;
+      const sym = op === 'ADD' ? '+' : '−';
+      return {
+        active: ['MDR', 'R', 'ALU', 'CU'],
+        wires: ['w-mdr-bus', 'bus-internal', 'w-bus-alu', 'w-r-alu', 'w-alu-r'],
+        bus: { internal: b, internalKind: 'word' },
+        alu: op === 'ADD' ? 'ADD' : 'SUBTRACT',
+        ioTable: [
+          { component: 'CU', inputs: [], outputs: [port('ALU selector', op === 'ADD' ? 'ADD' : 'SUBTRACT', 'text')] },
+          { component: 'ALU', inputs: [port('A (from R)', a, 'word'), port('B (from MDR)', b, 'word')], outputs: [port(`A ${sym} B`, res.value, 'word')] },
+          { component: 'R', inputs: [port('from ALU', res.value, 'word')], outputs: [port('new value', res.value, 'word')] },
+        ],
+        text:
+          `R (${W(a)}) and MDR (${W(b)}) go into the ALU. All ALU circuits compute at once, and the multiplexer selects the ${op === 'ADD' ? 'addition' : 'subtraction'} result: ` +
+          `${toSigned(a)} ${sym} ${toSigned(b)} = ${toSigned(res.value)}. The result goes into R.` +
+          (res.overflow ? OVERFLOW_TEXT(res.raw) : ''),
+      };
     },
-    EXEC_JMP() {
-      const a = operandOf(this.ir);
+    ALU_MDR(op) {
+      const a = this.mdr;
+      const res = aluResult(op, a);
+      this.mdr = res.value;
+      const sym = op === 'INC' ? '+' : '−';
+      return {
+        active: ['MDR', 'ALU', 'CU'],
+        wires: ['w-mdr-bus', 'bus-internal', 'w-bus-alu', 'w-alu-bus'],
+        bus: { internal: a, internalKind: 'word' },
+        alu: op === 'INC' ? '+1' : '−1',
+        ioTable: [
+          { component: 'CU', inputs: [], outputs: [port('ALU selector', op === 'INC' ? 'ADD 1' : 'SUBTRACT 1', 'text')] },
+          { component: 'ALU', inputs: [port('from MDR', a, 'word'), port('constant', 1, 'text')], outputs: [port(`MDR ${sym} 1`, res.value, 'word')] },
+          { component: 'MDR', inputs: [port('from ALU', res.value, 'word')], outputs: [port('new value', res.value, 'word')] },
+        ],
+        text:
+          `The value in MDR (${W(a)}) goes through the ALU, which ${op === 'INC' ? 'adds' : 'subtracts'} 1: ${toSigned(a)} ${sym} 1 = ${toSigned(res.value)}. ` +
+          'The result goes back into MDR. R is not used and does not change.' +
+          (res.overflow ? OVERFLOW_TEXT(res.raw) : ''),
+      };
+    },
+    ALU_COMPARE() {
+      const x = toSigned(this.mdr);
+      const r = toSigned(this.r);
+      this.gt = x > r ? 1 : 0;
+      this.eq = x === r ? 1 : 0;
+      this.lt = x < r ? 1 : 0;
+      const rel = x > r ? '>' : x === r ? '=' : '<';
+      return {
+        active: ['MDR', 'R', 'ALU', 'CC', 'CU'],
+        wires: ['w-mdr-bus', 'bus-internal', 'w-bus-alu', 'w-r-alu', 'w-alu-cc'],
+        bus: { internal: this.mdr, internalKind: 'word' },
+        alu: 'COMPARE',
+        ioTable: [
+          { component: 'CU', inputs: [], outputs: [port('ALU selector', 'COMPARE', 'text')] },
+          { component: 'ALU', inputs: [port('CON(X), from MDR', this.mdr, 'word'), port('R', this.r, 'word')], outputs: [port('result', `CON(X) ${rel} R`, 'text')] },
+          { component: 'CC', inputs: [], outputs: [port('GT', this.gt, 'bit'), port('EQ', this.eq, 'bit'), port('LT', this.lt, 'bit')] },
+        ],
+        text: `The ALU compares the value from memory (MDR = ${x}) with R (${r}). Since ${x} ${rel} ${r}, the condition codes become GT = ${this.gt}, EQ = ${this.eq}, LT = ${this.lt}. R and memory do not change.`,
+      };
+    },
+    JUMP() {
+      const a = addressOf(this.ir);
       this.pc = a;
       return {
-        rtl: 'PC ← IR[address]',
         active: ['IR', 'PC', 'CU'],
         wires: ['w-ir-bus', 'bus-internal', 'w-pc-bus'],
-        bus: { internal: a },
+        bus: { internal: a, internalKind: 'addr' },
         ioTable: [
           { component: 'IR', inputs: [], outputs: [port('address field', a, 'addr')] },
-          { component: 'PC', inputs: [port('internal bus', a, 'addr')], outputs: [port('new value', a, 'addr')] },
+          { component: 'PC', inputs: [port('from bus', a, 'addr')], outputs: [port('new value', a, 'addr')] },
         ],
-        text: `Jump: the address field of IR, ${A(a)}, is copied into PC. The next fetch reads the instruction at ${A(a)} instead of the next one in sequence.`,
+        text: `Jump: ${IR_ADDR_TEXT}, ${A(a)}, is copied into PC. The next instruction will be fetched from cell ${A(a)} instead of the next cell.`,
       };
     },
-    EXEC_JZ() {
-      return conditionalJump(this, 'Z');
+    JUMP_IF(cond) {
+      const a = addressOf(this.ir);
+      const flag = cond === 'NEQ' ? 'EQ' : cond;
+      const flagVal = this[flag.toLowerCase()];
+      const taken = cond === 'NEQ' ? flagVal === 0 : flagVal === 1;
+      const oldPc = this.pc;
+      if (taken) this.pc = a;
+      const need = cond === 'NEQ' ? 'EQ = 0' : `${cond} = 1`;
+      return {
+        active: taken ? ['CU', 'CC', 'IR', 'PC'] : ['CU', 'CC'],
+        wires: taken ? ['w-cc-cu', 'w-ir-bus', 'bus-internal', 'w-pc-bus'] : ['w-cc-cu'],
+        bus: taken ? { internal: a, internalKind: 'addr' } : {},
+        ioTable: [
+          { component: 'CC', inputs: [], outputs: [port(flag, flagVal, 'bit')] },
+          { component: 'CU', inputs: [port(flag, flagVal, 'bit')], outputs: [port('decision', taken ? 'jump' : 'no jump', 'text')] },
+          taken
+            ? { component: 'PC', inputs: [port('from IR', a, 'addr')], outputs: [port('new value', a, 'addr')] }
+            : { component: 'PC', inputs: [], outputs: [port('unchanged', oldPc, 'addr')] },
+        ],
+        text: taken
+          ? `The jump happens only if ${need}. The condition code ${flag} is ${flagVal}, so the jump is taken: ${IR_ADDR_TEXT}, ${A(a)}, is copied into PC.`
+          : `The jump happens only if ${need}. The condition code ${flag} is ${flagVal}, so there is no jump. PC keeps ${A(oldPc)}, which already points to the next instruction.`,
+      };
     },
-    EXEC_JN() {
-      return conditionalJump(this, 'N');
+    INPUT_TO_MDR() {
+      if (this.inputPos >= this.input.length) {
+        return { blocked: 'input', text: 'IN needs an input value, but there are no input values left. Type a value in the Input box and continue.' };
+      }
+      const v = this.input[this.inputPos++];
+      this.mdr = v;
+      return {
+        active: ['IN', 'MDR', 'CU'],
+        wires: ['bus-io', 'bus-internal', 'w-mdr-bus'],
+        bus: { internal: v, internalKind: 'word' },
+        io: 'IN',
+        ioTable: [
+          { component: 'IN', inputs: [], outputs: [port('next input value', v, 'word')] },
+          { component: 'MDR', inputs: [port('from input device', v, 'word')], outputs: [port('new value', v, 'word')] },
+        ],
+        text: `The input device gives the next input value, ${W(v)} (= ${toSigned(v)}). It travels over the I/O bus into MDR.`,
+      };
     },
-    EXEC_HALT() {
+    MDR_TO_OUTPUT() {
+      const v = this.mdr;
+      this.output.push(v);
+      return {
+        active: ['MDR', 'OUT', 'CU'],
+        wires: ['w-mdr-bus', 'bus-internal', 'bus-io'],
+        bus: { internal: v, internalKind: 'word' },
+        io: 'OUT',
+        ioTable: [
+          { component: 'MDR', inputs: [], outputs: [port('to output device', v, 'word')] },
+          { component: 'OUT', inputs: [port('value', v, 'word')], outputs: [port('printed', toSigned(v), 'text')] },
+        ],
+        text: `The value in MDR, ${W(v)}, is sent over the I/O bus to the output device, which prints it as the decimal number ${toSigned(v)}.`,
+      };
+    },
+    HALT() {
       this.halted = true;
       return {
-        rtl: 'halt',
         active: ['CU'],
         wires: [],
         bus: {},
-        ioTable: [{ component: 'CU', inputs: [port('opcode', 0, 'opcode')], outputs: [port('clock', 'stopped', 'text')] }],
-        text: 'HLT: the control unit stops the clock. No more instructions are fetched. Press Reset to run the program again.',
+        ioTable: [{ component: 'CU', inputs: [port('op code', 15, 'opcode')], outputs: [port('machine', 'stopped', 'text')] }],
+        text: 'HALT: the control unit stops. No more instructions are fetched. Press Reset to run the program again.',
       };
     },
   };
@@ -565,18 +621,16 @@
   // ---------------------------------------------------------------------------------------------------------------
   // Assembler
 
-  const PSEUDO = {
-    IN: { mnemonic: 'LDA', operand: IN_ADDR, note: `LDA ${IN_ADDR}` },
-    OUT: { mnemonic: 'STA', operand: OUT_ADDR, note: `STA ${OUT_ADDR}` },
-  };
-  const DATA_DIRECTIVES = new Set(['DATA', 'DAT', '.DATA', 'DB', '.BYTE']);
-  const RESERVED = new Set([...Object.keys(BY_MNEMONIC), ...Object.keys(PSEUDO), ...DATA_DIRECTIVES, 'ORG']);
-
   /**
-   * Two-pass assembler.
-   *   label:  MNEMONIC operand   ; comment
-   * operand = number (12, 0b1100, 0xC), label, or label+n / label-n.
-   * Directives: DATA v1, v2, ...   ORG address.   Pseudo-instructions: IN (= LDA 30), OUT (= STA 31).
+   * Two-pass assembler for the textbook's assembly language:
+   *
+   *   .BEGIN                      -- optional first line
+   *   AGAIN:  LOAD   ZERO         -- label: instruction operand
+   *           HALT
+   *   ZERO:   .DATA  0            -- data cell
+   *   .END                        -- optional last line
+   *
+   * Comments start with -- (or ;). Operands: a label, a cell number (0–15), or label+n / label-n.
    * Returns { words, errors: [{ line, message }], listing: [{ addr, word, line, source }], symbols }.
    */
   function assemble(source) {
@@ -584,17 +638,19 @@
     const symbols = {};
     const items = [];
     let loc = 0;
+    let ended = false;
     const err = (line, message) => errors.push({ line, message });
 
     String(source)
       .split(/\r?\n/)
       .forEach((raw, idx) => {
+        if (ended) return;
         const line = idx + 1;
-        let text = raw.replace(/(;|\/\/|#).*$/, '').trim();
+        let text = raw.replace(/(--|;).*$/, '').trim();
         let m;
         while ((m = /^([A-Za-z_]\w*)\s*:\s*/.exec(text))) {
-          const key = m[1].toLowerCase();
-          if (RESERVED.has(m[1].toUpperCase())) err(line, `"${m[1]}" is an instruction name and cannot be a label`);
+          const key = m[1].toUpperCase();
+          if (BY_NAME[key]) err(line, `"${m[1]}" is an instruction name and cannot be used as a label`);
           else if (key in symbols) err(line, `Label "${m[1]}" is defined twice`);
           else symbols[key] = loc;
           text = text.slice(m[0].length);
@@ -602,39 +658,33 @@
         if (!text) return;
 
         const [head, ...rest] = text.split(/\s+/);
-        const mnemonic = head.toUpperCase();
+        const word = head.toUpperCase();
         const args = rest.join(' ').split(/\s*,\s*|\s+/).filter(Boolean);
 
-        if (mnemonic === 'ORG') {
-          const v = args.length === 1 ? parseNumber(args[0]) : null;
-          if (v === null || v < 0 || v >= MEM_SIZE) err(line, `ORG needs one address between 0 and ${MEM_SIZE - 1}`);
-          else loc = v;
+        if (word === '.BEGIN') return;
+        if (word === '.END') {
+          ended = true;
           return;
         }
-        if (DATA_DIRECTIVES.has(mnemonic)) {
-          if (args.length === 0) err(line, `${head} needs at least one value`);
+        if (word === '.DATA') {
+          if (args.length === 0) err(line, '.DATA needs a value, e.g. ".DATA 5"');
           for (const expr of args) items.push({ kind: 'data', expr, line, addr: loc++, source: raw.trim() });
           return;
         }
-        if (PSEUDO[mnemonic]) {
-          if (args.length) err(line, `${mnemonic} takes no operand (it means ${PSEUDO[mnemonic].note})`);
-          items.push({ kind: 'pseudo', mnemonic, line, addr: loc++, source: raw.trim() });
-          return;
-        }
-        const ins = BY_MNEMONIC[mnemonic];
+        const ins = BY_NAME[word];
         if (!ins) {
-          err(line, `Unknown instruction "${head}". Valid: ${Object.keys(BY_MNEMONIC).join(', ')}, IN, OUT, DATA, ORG`);
+          err(line, `Unknown instruction "${head}". The instructions are: ${INSTRUCTIONS.map((i) => i.name).join(', ')}`);
           return;
         }
-        if (ins.operand && args.length !== 1) err(line, `${mnemonic} needs exactly one address operand`);
-        else if (!ins.operand && args.length) err(line, `${mnemonic} takes no operand`);
+        if (!ins.noOperand && args.length !== 1) err(line, `${ins.name} needs exactly one operand: a memory address or a label`);
+        else if (ins.noOperand && args.length) err(line, `${ins.name} takes no operand`);
         items.push({ kind: 'ins', ins, expr: args[0], line, addr: loc++, source: raw.trim() });
       });
 
     const resolve = (expr, line) => {
       const lm = /^([A-Za-z_]\w*)([+-]\d+)?$/.exec(expr);
       if (lm) {
-        const key = lm[1].toLowerCase();
+        const key = lm[1].toUpperCase();
         if (!(key in symbols)) {
           err(line, `Unknown label "${lm[1]}"`);
           return null;
@@ -642,112 +692,38 @@
         return symbols[key] + (lm[2] ? parseInt(lm[2], 10) : 0);
       }
       const v = parseNumber(expr);
-      if (v === null) err(line, `"${expr}" is not a number or label`);
+      if (v === null) err(line, `"${expr}" is not a number or a label`);
       return v;
     };
 
     const words = new Array(MEM_SIZE).fill(0);
-    const owner = new Array(MEM_SIZE).fill(null);
     const listing = [];
+    let tooLong = false;
     for (const it of items) {
       if (it.addr >= MEM_SIZE) {
-        err(it.line, `Program does not fit: memory has only ${MEM_SIZE} cells (0–${MEM_SIZE - 1})`);
+        if (!tooLong) err(it.line, `The program does not fit: memory has only ${MEM_SIZE} cells (0–${MEM_SIZE - 1}). This line would go into cell ${it.addr}.`);
+        tooLong = true;
         continue;
       }
-      if (it.addr === IN_ADDR || it.addr === OUT_ADDR) {
-        err(it.line, `Cells ${IN_ADDR} and ${OUT_ADDR} are the I/O ports; the program cannot be placed there`);
-        continue;
-      }
-      if (owner[it.addr] !== null) {
-        err(it.line, `Cell ${it.addr} is already used by line ${owner[it.addr]}`);
-        continue;
-      }
-      owner[it.addr] = it.line;
       let word = 0;
       if (it.kind === 'data') {
         const v = resolve(it.expr, it.line);
-        if (v !== null && (v < -(1 << (WORD_BITS - 1)) || v > WORD_MASK)) err(it.line, `Value ${v} does not fit in ${WORD_BITS} bits (−128…255)`);
+        if (v !== null && (v < MIN_VALUE || v > MAX_VALUE)) err(it.line, `${v} does not fit in ${WORD_BITS} bits: use a number from ${MIN_VALUE} to ${MAX_VALUE}`);
         word = (v ?? 0) & WORD_MASK;
-      } else if (it.kind === 'pseudo') {
-        const p = PSEUDO[it.mnemonic];
-        word = encode(BY_MNEMONIC[p.mnemonic].opcode, p.operand);
       } else {
-        let operand = 0;
-        if (it.ins.operand && it.expr !== undefined) {
+        let address = 0;
+        if (!it.ins.noOperand && it.expr !== undefined) {
           const v = resolve(it.expr, it.line);
           if (v !== null && (v < 0 || v >= MEM_SIZE)) err(it.line, `Address ${v} is outside memory (0–${MEM_SIZE - 1})`);
-          else if (v !== null) operand = v;
+          else if (v !== null) address = v;
         }
-        word = encode(it.ins.opcode, operand);
+        word = encode(it.ins.opcode, address);
       }
       words[it.addr] = word;
       listing.push({ addr: it.addr, word, line: it.line, source: it.source });
     }
     errors.sort((a, b) => a.line - b.line);
-    listing.sort((a, b) => a.addr - b.addr);
     return { words, errors, listing, symbols };
-  }
-
-  // ---------------------------------------------------------------------------------------------------------------
-  // Binary program loader / exporter
-
-  /**
-   * One 8-bit word per line, loaded from address 0 upwards. Spaces inside a word are ignored ("001 01110").
-   * An optional address prefix places a word elsewhere: "01110: 00000101" (5 binary digits) or "14: 00000101".
-   * Comments start with ; or #.
-   */
-  function parseBinary(text) {
-    const words = new Array(MEM_SIZE).fill(0);
-    const errors = [];
-    let loc = 0;
-    let count = 0;
-    String(text)
-      .split(/\r?\n/)
-      .forEach((raw, idx) => {
-        const line = idx + 1;
-        let t = raw.replace(/[;#].*$/, '').trim();
-        if (!t) return;
-        let addr = loc;
-        const colon = t.indexOf(':');
-        if (colon >= 0) {
-          const a = t.slice(0, colon).trim();
-          const v = new RegExp(`^[01]{${ADDR_BITS}}$`).test(a) ? parseInt(a, 2) : parseNumber(a);
-          if (v === null || v < 0 || v >= MEM_SIZE) {
-            errors.push({ line, message: `"${a}" is not a valid address (0–${MEM_SIZE - 1})` });
-            return;
-          }
-          addr = v;
-          t = t.slice(colon + 1).trim();
-        }
-        const bits = t.replace(/[\s_]/g, '');
-        if (!new RegExp(`^[01]{${WORD_BITS}}$`).test(bits)) {
-          errors.push({ line, message: `"${t}" is not an ${WORD_BITS}-bit binary word (exactly ${WORD_BITS} digits of 0/1)` });
-          return;
-        }
-        if (addr >= MEM_SIZE) {
-          errors.push({ line, message: `Program does not fit: memory has only ${MEM_SIZE} cells` });
-          return;
-        }
-        words[addr] = parseInt(bits, 2);
-        loc = addr + 1;
-        count += 1;
-      });
-    return { words, errors, count };
-  }
-
-  /** Memory image as text: "00000: 001 01110   ; LDA 14". Stops after the last non-zero cell. */
-  function formatBinary(words) {
-    let last = 0;
-    words.forEach((w, i) => {
-      if (w) last = i;
-    });
-    const lines = [];
-    for (let i = 0; i <= last; i++) {
-      const w = words[i];
-      const bits = toBin(w, WORD_BITS);
-      lines.push(`${toBin(i, ADDR_BITS)}: ${bits.slice(0, OPCODE_BITS)} ${bits.slice(OPCODE_BITS)}   ; ${disassemble(w).padEnd(7)} | ${w}`);
-    }
-    return lines.join('\n');
   }
 
   return {
@@ -757,23 +733,22 @@
     MEM_SIZE,
     WORD_MASK,
     ADDR_MASK,
-    IN_ADDR,
-    OUT_ADDR,
+    MIN_VALUE,
+    MAX_VALUE,
     INSTRUCTIONS,
-    BY_MNEMONIC,
+    BY_NAME,
     EXEC_PLANS,
     FETCH_PLAN,
-    PSEUDO,
     Machine,
+    microText,
     assemble,
-    parseBinary,
-    formatBinary,
     parseNumber,
     parseValueList,
     toBin,
+    wordBin,
     toSigned,
     opcodeOf,
-    operandOf,
+    addressOf,
     encode,
     disassemble,
   };

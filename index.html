@@ -14,17 +14,21 @@
       <span class="course">CENG 111 · METU</span>
     </div>
     <div class="topbar-controls">
-      <label>Numbers
-        <select id="format">
-          <option value="bin">binary</option>
-          <option value="dec">decimal (unsigned)</option>
-          <option value="sdec">decimal (signed)</option>
-          <option value="hex">hexadecimal</option>
-        </select>
-      </label>
-      <a href="#help" class="link-btn">Help &amp; instruction set</a>
+      <fieldset class="format" aria-label="Number format">
+        <span>Show numbers in</span>
+        <label><input type="radio" name="format" value="bin" checked> binary</label>
+        <label><input type="radio" name="format" value="dec"> decimal</label>
+      </fieldset>
+      <a href="#help" class="link-btn">Instruction set &amp; help</a>
     </div>
   </header>
+
+  <ol class="quickstart" aria-label="How to use">
+    <li><b>Choose an example</b> or write a program.</li>
+    <li>Press <b>Assemble &amp; load</b> to put it into memory.</li>
+    <li>Press <b>Next step</b> and read what happens under the diagram.</li>
+    <li>Ready to test yourself? Turn on <b>Practice mode</b>.</li>
+  </ol>
 
   <main class="layout">
     <!-- ============================== Program ============================== -->
@@ -33,47 +37,38 @@
         <h2 id="program-title">Program</h2>
         <select id="examples" aria-label="Load an example program"><option value="">Examples…</option></select>
       </div>
-      <div class="tabs" role="tablist">
-        <button role="tab" class="tab active" data-tab="asm" aria-selected="true">Assembly</button>
-        <button role="tab" class="tab" data-tab="bin" aria-selected="false">Binary</button>
-      </div>
-      <div class="tab-body" id="tab-asm">
-        <textarea id="asm-src" spellcheck="false" autocomplete="off" aria-label="Assembly source"></textarea>
-        <div class="btn-row">
-          <button id="btn-assemble" class="primary">Assemble &amp; load</button>
-        </div>
-      </div>
-      <div class="tab-body hidden" id="tab-bin">
-        <textarea id="bin-src" spellcheck="false" autocomplete="off" aria-label="Binary program" placeholder="One 8-bit word per line, e.g.&#10;001 00101&#10;011 00110&#10;000 00000"></textarea>
-        <div class="btn-row">
-          <button id="btn-load-bin" class="primary">Load binary</button>
-          <button id="btn-from-mem" title="Show the current memory image as binary">Memory → binary</button>
-        </div>
-      </div>
-      <div id="asm-msg" class="msg" role="status" aria-live="polite"></div>
-      <div class="btn-row small">
-        <label class="file-btn">Open file…<input type="file" id="file-input" accept=".txt,.bin,.asm,.s,.vn"></label>
-        <button id="btn-download">Download binary</button>
+      <textarea id="asm-src" spellcheck="false" autocomplete="off" aria-label="Assembly program"></textarea>
+      <div class="btn-row">
+        <button id="btn-assemble" class="primary">Assemble &amp; load</button>
         <button id="btn-share" title="Copy a link that opens this program">Copy share link</button>
       </div>
+      <div id="asm-msg" class="msg" role="status" aria-live="polite"></div>
     </section>
 
     <!-- ============================== Machine ============================== -->
     <section class="panel machine" aria-labelledby="machine-title">
       <h2 id="machine-title" class="sr-only">Machine</h2>
       <div class="controls">
-        <button id="btn-reset" title="Reload the program and clear registers (R)">⟲ Reset</button>
-        <button id="btn-back" title="Undo one step (B)">◀ Back</button>
-        <button id="btn-micro" class="primary" title="Execute one clock step: one micro-operation (S)">Micro-step ▶</button>
-        <button id="btn-instr" class="primary" title="Execute until the current instruction completes (I)">Instruction ▶▶</button>
-        <button id="btn-run" title="Run continuously (Space)">Run ▶▶▶</button>
-        <label class="speed">Speed <input type="range" id="speed" min="0" max="5" value="2" aria-label="Run speed"><span id="speed-label"></span></label>
-        <label class="toggle" title="Before each instruction, predict the register values it will produce"><input type="checkbox" id="predict-toggle"> Predict mode</label>
+        <button id="btn-reset" title="Load the program again and clear all registers (R)">⟲ Reset</button>
+        <button id="btn-back" title="Undo the last step (B)">◀ Undo</button>
+        <button id="btn-micro" class="primary" title="Do one step of the instruction cycle (S)">Next step ▶</button>
+        <button id="btn-instr" class="primary" title="Do all steps of the current instruction (I)">Next instruction ▶▶</button>
+        <button id="btn-run" title="Run until HALT (Space)">Run ▶▶▶</button>
+        <select id="speed" aria-label="Run speed">
+          <option value="1000">slow</option>
+          <option value="250" selected>normal</option>
+          <option value="50">fast</option>
+          <option value="0">instant</option>
+        </select>
+      </div>
+      <div class="practice-bar">
+        <button id="btn-practice" class="practice-toggle" aria-pressed="false">🎯 Practice mode: <b>OFF</b></button>
+        <span class="hint">In practice mode you predict the registers before each instruction runs, then check your answers.</span>
       </div>
       <div id="status" class="status"></div>
 
       <div class="diagram-wrap">
-        <svg id="diagram" viewBox="0 0 860 470" role="img" aria-label="Datapath of the Von Neumann machine: CPU with control unit, registers and ALU, connected by buses to memory and I/O">
+        <svg id="diagram" viewBox="0 0 860 470" role="img" aria-label="Datapath of the Von Neumann machine: CPU with control unit, registers and ALU, connected by buses to memory and to the I/O devices">
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
@@ -82,24 +77,29 @@
 
           <rect class="box-cpu" x="10" y="10" width="560" height="450" rx="12"/>
           <text class="box-label" x="24" y="450">CPU</text>
-          <rect class="box-mem" x="630" y="10" width="220" height="350" rx="12"/>
-          <rect class="box-io" x="630" y="380" width="220" height="80" rx="12"/>
+          <rect class="box-mem" x="630" y="10" width="220" height="352" rx="12"/>
+          <rect class="box-io" x="630" y="378" width="220" height="82" rx="12"/>
 
           <!-- wires and buses (drawn first so boxes sit on top) -->
-          <path id="bus-ctrl" class="wire bus" d="M145,60 V30 H630" marker-end="url(#arrow)"/>
-          <path id="bus-addr" class="wire bus" d="M550,227 H630" marker-end="url(#arrow)"/>
-          <path id="bus-data" class="wire bus" d="M550,327 H630" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-          <path id="bus-io" class="wire bus" d="M600,327 V420 H640" marker-end="url(#arrow)"/>
-          <path id="bus-internal" class="wire bus-internal" d="M410,50 V420"/>
-          <path id="w-ir-cu" class="wire" d="M285,87 H262" marker-end="url(#arrow)"/>
-          <path id="w-ir-bus" class="wire" d="M385,87 H410"/>
-          <path id="w-pc-bus" class="wire" d="M410,87 H430"/>
-          <path id="w-mar-bus" class="wire" d="M410,227 H430"/>
-          <path id="w-mdr-bus" class="wire" d="M410,327 H430"/>
-          <path id="w-ac-bus" class="wire" d="M230,387 H410"/>
-          <path id="w-bus-alu" class="wire" d="M410,195 H218 V213" marker-end="url(#arrow)"/>
-          <path id="w-ac-alu" class="wire" d="M90,387 H45 V195 H102 V213" marker-end="url(#arrow)"/>
-          <path id="w-alu-ac" class="wire" d="M160,295 V358" marker-end="url(#arrow)"/>
+          <path data-wire="bus-ctrl" class="wire bus" d="M145,60 V30 H630" marker-end="url(#arrow)"/>
+          <path data-wire="bus-addr" class="wire bus" d="M550,227 H630" marker-end="url(#arrow)"/>
+          <path data-wire="bus-data" class="wire bus" d="M550,327 H630" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+          <path data-wire="bus-io" class="wire bus" d="M410,440 H630" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+          <path data-wire="bus-internal" class="wire bus-internal" d="M410,50 V440"/>
+          <path data-wire="w-ir-cu" class="wire" d="M280,87 H264" marker-end="url(#arrow)"/>
+          <path data-wire="w-ir-bus" class="wire" d="M390,87 H410"/>
+          <path data-wire="w-pc-bus" class="wire" d="M410,87 H430"/>
+          <path data-wire="w-pc-inc" class="wire" d="M478,114 V128" marker-end="url(#arrow)"/>
+          <path data-wire="w-pc-inc" class="wire" d="M502,130 V116" marker-end="url(#arrow)"/>
+          <path data-wire="w-mar-bus" class="wire" d="M410,227 H430"/>
+          <path data-wire="w-mdr-bus" class="wire" d="M410,327 H430"/>
+          <path data-wire="w-r-bus" class="wire" d="M230,387 H410"/>
+          <path data-wire="w-bus-alu" class="wire" d="M410,195 H218 V213" marker-end="url(#arrow)"/>
+          <path data-wire="w-r-alu" class="wire" d="M90,387 H45 V195 H102 V213" marker-end="url(#arrow)"/>
+          <path data-wire="w-alu-r" class="wire" d="M160,295 V358" marker-end="url(#arrow)"/>
+          <path data-wire="w-alu-bus" class="wire" d="M205,295 V335 H408" marker-end="url(#arrow)"/>
+          <path data-wire="w-alu-cc" class="wire" d="M240,262 H332 V178" marker-end="url(#arrow)"/>
+          <path data-wire="w-cc-cu" class="wire" d="M282,152 H264" marker-end="url(#arrow)"/>
 
           <!-- bus value labels -->
           <text id="t-bus-ctrl" class="bus-val" x="590" y="24"></text>
@@ -108,28 +108,39 @@
           <text id="t-bus-data" class="bus-val" x="590" y="319"></text>
           <text class="bus-name" x="590" y="343">data</text>
           <text id="t-bus-internal" class="bus-val" x="410" y="44"></text>
-          <text class="bus-name" x="410" y="436">internal bus</text>
+          <text class="bus-name" x="452" y="455">internal bus</text>
+          <text class="bus-name" x="590" y="433">I/O bus</text>
 
           <!-- Control unit -->
           <g id="c-CU" class="comp">
-            <rect x="30" y="60" width="232" height="120" rx="8"/>
-            <text class="name" x="42" y="80">Control Unit</text>
-            <text id="cu-phase" class="cu-line strong" x="42" y="104"></text>
-            <text id="cu-instr" class="cu-line" x="42" y="128"></text>
-            <text id="cu-rtl" class="cu-line mono" x="42" y="152"></text>
+            <rect x="30" y="60" width="232" height="122" rx="8"/>
+            <text class="name" x="42" y="79">Control unit · instruction decoder</text>
+            <text id="cu-phase" class="cu-line strong" x="42" y="103"></text>
+            <text id="cu-instr" class="cu-line" x="42" y="126"></text>
+            <text id="cu-rtl" class="cu-line mono" x="42" y="150"></text>
             <text id="cu-clock" class="cu-line muted" x="42" y="172"></text>
           </g>
 
           <!-- Registers -->
           <g id="c-IR" class="comp reg">
-            <rect x="285" y="60" width="100" height="54" rx="6"/>
-            <text class="name" x="293" y="75">IR</text>
+            <rect x="280" y="60" width="110" height="54" rx="6"/>
+            <text class="name" x="288" y="75">IR</text>
             <text id="v-IR" class="val" x="335" y="101"></text>
           </g>
           <g id="c-PC" class="comp reg">
             <rect x="430" y="60" width="120" height="54" rx="6"/>
             <text class="name" x="438" y="75">PC</text>
             <text id="v-PC" class="val" x="490" y="101"></text>
+          </g>
+          <g id="c-INC" class="comp">
+            <rect x="466" y="130" width="48" height="24" rx="5"/>
+            <text class="name center small" x="490" y="147">+1</text>
+          </g>
+          <g id="c-CC" class="comp">
+            <rect x="279" y="128" width="107" height="48" rx="6"/>
+            <text class="name" x="287" y="141">Condition codes</text>
+            <text class="cc-name" x="305" y="155">GT</text><text class="cc-name" x="332" y="155">EQ</text><text class="cc-name" x="359" y="155">LT</text>
+            <text id="v-GT" class="val cc-val" x="305" y="171"></text><text id="v-EQ" class="val cc-val" x="332" y="171"></text><text id="v-LT" class="val cc-val" x="359" y="171"></text>
           </g>
           <g id="c-MAR" class="comp reg">
             <rect x="430" y="200" width="120" height="54" rx="6"/>
@@ -141,40 +152,35 @@
             <text class="name" x="438" y="315">MDR</text>
             <text id="v-MDR" class="val" x="490" y="341"></text>
           </g>
-          <g id="c-AC" class="comp reg">
+          <g id="c-R" class="comp reg">
             <rect x="90" y="360" width="140" height="54" rx="6"/>
-            <text class="name" x="98" y="375">AC (accumulator)</text>
-            <text id="v-AC" class="val" x="160" y="401"></text>
+            <text class="name" x="98" y="375">R (register)</text>
+            <text id="v-R" class="val" x="160" y="401"></text>
           </g>
           <g id="c-ALU" class="comp">
             <polygon points="60,215 145,215 160,235 175,215 260,215 225,295 95,295"/>
-            <text class="name center" x="160" y="262">ALU</text>
+            <text class="name center" x="160" y="258">ALU</text>
             <text class="port-label" x="102" y="229">A</text>
             <text class="port-label" x="218" y="229">B</text>
-            <text id="v-ALU" class="alu-op" x="160" y="282"></text>
-          </g>
-          <g id="c-FLAGS" class="comp">
-            <rect x="282" y="255" width="100" height="44" rx="6"/>
-            <text class="name" x="290" y="270">Flags</text>
-            <text id="v-FLAGS" class="val small" x="332" y="291"></text>
+            <text id="v-ALU" class="alu-op" x="160" y="280"></text>
           </g>
 
           <!-- Memory (rows generated by ui.js) -->
           <g id="c-MEM" class="comp-plain">
-            <text class="box-label" x="642" y="32">Memory · 32 × 8 bits</text>
+            <text class="box-label" x="642" y="30">Memory · 16 cells × 8 bits</text>
             <g id="mem-rows"></g>
           </g>
 
-          <!-- I/O -->
+          <!-- I/O devices -->
           <g id="c-IN" class="comp">
-            <rect x="640" y="390" width="100" height="62" rx="6"/>
-            <text class="name" x="648" y="405">Input · cell 30</text>
-            <text id="v-IN" class="val small" x="690" y="436"></text>
+            <rect x="640" y="388" width="100" height="62" rx="6"/>
+            <text class="name" x="648" y="403">Input device</text>
+            <text id="v-IN" class="val small" x="690" y="434"></text>
           </g>
           <g id="c-OUT" class="comp">
-            <rect x="745" y="390" width="100" height="62" rx="6"/>
-            <text class="name" x="753" y="405">Output · cell 31</text>
-            <text id="v-OUT" class="val small" x="795" y="436"></text>
+            <rect x="745" y="388" width="100" height="62" rx="6"/>
+            <text class="name" x="753" y="403">Output device</text>
+            <text id="v-OUT" class="val small" x="795" y="434"></text>
           </g>
         </svg>
       </div>
@@ -182,23 +188,23 @@
       <div id="explain" class="explain" aria-live="polite"></div>
     </section>
 
-    <!-- ============================== Memory & I/O ============================== -->
+    <!-- ============================== Memory editor & I/O ============================== -->
     <section class="panel side" aria-labelledby="mem-title">
-      <h2 id="mem-title">Memory</h2>
-      <p class="hint">Edit a cell to change it. Click an address to set a breakpoint.</p>
+      <h2 id="mem-title">Memory editor</h2>
+      <p class="hint">16 cells, 8 bits each. To change a cell, click its contents and type 8 binary digits.</p>
       <div class="mem-table-wrap">
         <table class="mem-table" id="mem-table">
-          <thead><tr><th>Addr</th><th>Contents</th><th>Value</th><th>As instr.</th></tr></thead>
+          <thead><tr><th>Address</th><th>Contents</th><th>Decimal</th><th>As instruction</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
       <h2>Input / Output</h2>
-      <label class="field"><span>Input values (read by <code>IN</code> = cell 30)</span>
-        <input type="text" id="input-values" placeholder="e.g. 12, 30, 0b101" autocomplete="off">
+      <label class="field"><span>Input values, read by <code>IN</code> (−128 … 127)</span>
+        <input type="text" id="input-values" placeholder="e.g. 5, 7, -1" autocomplete="off">
       </label>
       <div id="input-chips" class="chips"></div>
       <div id="input-msg" class="msg"></div>
-      <div class="field"><span>Output (written by <code>OUT</code> = cell 31)</span>
+      <div class="field"><span>Output, printed by <code>OUT</code></span>
         <div id="output-list" class="chips output"></div>
       </div>
     </section>
@@ -214,7 +220,7 @@
       </div>
       <div class="trace-wrap">
         <table class="trace-table" id="trace-table">
-          <thead><tr><th>#</th><th>Instr.</th><th>Phase</th><th>Micro-operation</th><th>PC</th><th>MAR</th><th>MDR</th><th>IR</th><th>AC</th><th>Z</th><th>N</th><th>Memory write / output</th></tr></thead>
+          <thead><tr><th>Step</th><th>Instr.</th><th>Phase</th><th>Micro-operation</th><th>PC</th><th>MAR</th><th>MDR</th><th>IR</th><th>R</th><th>GT</th><th>EQ</th><th>LT</th><th>Memory / I/O</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -229,38 +235,42 @@
       <div>
         <h3>The machine</h3>
         <ul>
-          <li><b>Memory:</b> 32 cells, 8 bits each. <b>Instructions and data live in the same memory</b>: this is the Von Neumann (stored-program) idea. Any cell can be read as a number or as an instruction.</li>
-          <li><b>Instruction format:</b> <code>ooo aaaaa</code>: 3-bit opcode, 5-bit address field.</li>
-          <li><b>Registers:</b> PC (program counter: address of the next instruction), IR (instruction register: instruction being executed), MAR (memory address register: address sent to memory), MDR (memory data register: word read from / written to memory), AC (accumulator: operand and result of the ALU).</li>
-          <li><b>Flags:</b> Z = 1 when AC is 0. N = 1 when the leftmost bit of AC is 1 (negative in two’s complement).</li>
-          <li><b>I/O is memory-mapped:</b> reading cell 30 takes the next value from the Input box; writing cell 31 prints a value.</li>
-          <li>Arithmetic is 8-bit: results wrap around (250 + 10 = 4).</li>
+          <li><b>Memory:</b> 16 cells, 8 bits each, with addresses 0 to 15 (4 bits). <b>Instructions and data are stored in the same memory</b>: this is the Von Neumann (stored-program) idea.</li>
+          <li><b>Instruction format:</b> <code>oooo aaaa</code>. The first 4 bits are the <b>op code</b> (which instruction), the last 4 bits are the <b>address field X</b> (which memory cell).</li>
+          <li><b>Registers:</b>
+            <b>PC</b> (program counter): address of the next instruction.
+            <b>IR</b> (instruction register): the instruction being executed.
+            <b>MAR</b> (memory address register): the address sent to memory.
+            <b>MDR</b> (memory data register): the value fetched from or stored to memory.
+            <b>R</b>: the register used by LOAD, STORE, ADD, SUBTRACT and COMPARE.</li>
+          <li><b>Condition codes GT, EQ, LT:</b> set only by COMPARE, and used by the conditional jumps.</li>
+          <li><b>Numbers</b> are 8-bit two's complement, from −128 to 127. A result outside this range wraps around (overflow).</li>
+          <li><code>CON(X)</code> means "the contents of memory cell X".</li>
         </ul>
         <h3>The instruction cycle</h3>
         <ol>
-          <li><b>Fetch</b>: <code>MAR ← PC</code>; <code>MDR ← M[MAR]</code> and <code>PC ← PC + 1</code>; <code>IR ← MDR</code></li>
-          <li><b>Decode</b>: the control unit splits IR into opcode and address field.</li>
-          <li><b>Execute</b>: the micro-operations listed below for that instruction.</li>
+          <li><b>Fetch:</b> <code>PC → MAR</code>, <code>CON(MAR) → MDR</code>, <code>MDR → IR</code>, <code>PC + 1 → PC</code></li>
+          <li><b>Decode:</b> the instruction decoder reads the op code in IR.</li>
+          <li><b>Execute:</b> the steps listed in the table for that instruction.</li>
         </ol>
+        <h3>Assembly language</h3>
+<pre>.BEGIN                    -- first line of the program
+AGAIN:  LOAD    ZERO      -- LABEL:  INSTRUCTION  X   -- comment
+        COMPARE N         -- X can be a label or a cell number 0..15
+        HALT
+ZERO:   .DATA   0         -- a data cell holding 0
+.END                      -- last line of the program</pre>
+        <h3>Keyboard</h3>
+        <p><kbd>S</kbd> next step · <kbd>I</kbd> next instruction · <kbd>B</kbd> undo · <kbd>R</kbd> reset · <kbd>Space</kbd> run / pause</p>
       </div>
       <div>
         <h3>Instruction set</h3>
-        <table class="isa-table" id="isa-table">
-          <thead><tr><th>Opcode</th><th>Mnemonic</th><th>Meaning</th><th>Execute steps</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <h3>Assembly syntax</h3>
-<pre>label:  MNEMONIC operand   ; comment
-loop:   LDA count          ; operand: label, number or label+1
-        IN                 ; = LDA 30  (read input)
-        OUT                ; = STA 31  (print AC)
-count:  DATA 5, 0b101, -1  ; data cells
-        ORG 20             ; continue placing at address 20</pre>
-        <h3>Binary format</h3>
-<pre>001 00101        ; one 8-bit word per line, from address 0
-00111: 00000101  ; optional "address:" prefix (5 binary digits or decimal)</pre>
-        <h3>Keyboard</h3>
-        <p><kbd>S</kbd> micro-step · <kbd>I</kbd> instruction · <kbd>B</kbd> back · <kbd>R</kbd> reset · <kbd>Space</kbd> run/pause</p>
+        <div class="table-scroll">
+          <table class="isa-table" id="isa-table">
+            <thead><tr><th>Op code</th><th>Instruction</th><th>Meaning</th><th>Execute steps</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </section>

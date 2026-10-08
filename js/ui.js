@@ -5,84 +5,44 @@
   const VN = window.VNCore;
   const EXAMPLES = window.VNExamples;
   const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-  const SPEEDS = [
-    { label: '0.5 step/s', ms: 2000 },
-    { label: '1 step/s', ms: 1000 },
-    { label: '3 steps/s', ms: 333 },
-    { label: '10 steps/s', ms: 100 },
-    { label: '50 steps/s', ms: 20 },
-    { label: 'max', ms: 0 },
-  ];
   const HISTORY_LIMIT = 20000;
-  const TRACE_LIMIT = 50000;
+  const TRACE_LIMIT = 20000;
   const TRACE_VISIBLE = 300;
-  const STORE_KEY = 'ceng111-simulation:v1';
+  const RUN_LIMIT = 1000; // instructions per Run, to stop endless loops
+  const STORE_KEY = 'ceng111-simulation:v2';
 
-  const OP_RTL = {
-    FETCH_MAR: 'MAR ← PC',
-    FETCH_READ: 'MDR ← M[MAR], PC ← PC + 1',
-    FETCH_IR: 'IR ← MDR',
-    DECODE: 'decode IR',
-    EXEC_MAR_IR: 'MAR ← IR[address]',
-    EXEC_READ: 'MDR ← M[MAR]',
-    EXEC_AC_MDR: 'AC ← MDR',
-    EXEC_MDR_AC: 'MDR ← AC',
-    EXEC_WRITE: 'M[MAR] ← MDR',
-    EXEC_ADD: 'AC ← AC + MDR',
-    EXEC_SUB: 'AC ← AC − MDR',
-    EXEC_JMP: 'PC ← IR[address]',
-    EXEC_JZ: 'if Z = 1: PC ← IR[address]',
-    EXEC_JN: 'if N = 1: PC ← IR[address]',
-    EXEC_HALT: 'halt',
-  };
-  // Micro-ops whose internal-bus value is an address (shown with 5 bits).
-  const ADDR_BUS_OPS = new Set(['FETCH_MAR', 'EXEC_MAR_IR', 'EXEC_JMP', 'EXEC_JZ', 'EXEC_JN']);
-  const COMPONENTS = ['CU', 'PC', 'IR', 'MAR', 'MDR', 'AC', 'ALU', 'FLAGS', 'IN', 'OUT'];
-  const WIRES = ['bus-ctrl', 'bus-addr', 'bus-data', 'bus-io', 'bus-internal', 'w-ir-cu', 'w-ir-bus', 'w-pc-bus', 'w-mar-bus', 'w-mdr-bus', 'w-ac-bus', 'w-bus-alu', 'w-ac-alu', 'w-alu-ac'];
+  const COMPONENTS = ['CU', 'PC', 'INC', 'IR', 'CC', 'MAR', 'MDR', 'R', 'ALU', 'IN', 'OUT'];
+  const COMPONENT_NAMES = { CU: 'Control unit', MEM: 'Memory', CC: 'Condition codes', INC: '+1 circuit', IN: 'Input device', OUT: 'Output device' };
   const PREDICT_FIELDS = [
-    { key: 'pc', label: 'PC', kind: 'addr' },
-    { key: 'ir', label: 'IR', kind: 'word' },
-    { key: 'mar', label: 'MAR', kind: 'addr' },
-    { key: 'mdr', label: 'MDR', kind: 'word' },
-    { key: 'ac', label: 'AC', kind: 'word' },
+    { key: 'pc', label: 'PC', kind: 'addr', hint: 'address of the next instruction' },
+    { key: 'ir', label: 'IR', kind: 'word', hint: 'the instruction' },
+    { key: 'mar', label: 'MAR', kind: 'addr', hint: 'last address sent to memory' },
+    { key: 'mdr', label: 'MDR', kind: 'word', hint: 'last value fetched or stored' },
+    { key: 'r', label: 'R', kind: 'word', hint: 'the register' },
   ];
 
   const machine = new VN.Machine();
   const state = {
     format: 'bin',
     loadedWords: new Array(VN.MEM_SIZE).fill(0),
-    loadedFrom: 'asm', // 'asm' | 'bin' | 'file' | 'edit'
-    history: [], // [{ snap, traceLen, lastRec }]
+    history: [], // [{ snap, traceLen, traceOffset, lastRec }]
     trace: [],
-    traceOffset: 0, // number of trace rows dropped from the front (TRACE_LIMIT)
+    traceOffset: 0,
     lastRec: null,
     running: false,
     timer: null,
-    breakpoints: new Set(),
-    explainMode: 'step', // 'step' | 'predict' | 'predict-result'
-    predictResult: null,
-    predictStats: { answered: 0, perfect: 0 },
+    practice: false,
+    practiceView: null, // null | 'form' | 'result'
+    practiceResult: null,
+    practiceStats: { answered: 0, perfect: 0 },
   };
 
   // ------------------------------------------------------------------------------------------------ formatting
 
-  function fmtWord(v) {
-    switch (state.format) {
-      case 'dec': return String(v);
-      case 'sdec': return String(VN.toSigned(v));
-      case 'hex': return '0x' + v.toString(16).toUpperCase().padStart(2, '0');
-      default: return VN.toBin(v, VN.WORD_BITS);
-    }
-  }
-  function fmtAddr(v) {
-    switch (state.format) {
-      case 'dec':
-      case 'sdec': return String(v);
-      case 'hex': return '0x' + v.toString(16).toUpperCase().padStart(2, '0');
-      default: return VN.toBin(v, VN.ADDR_BITS);
-    }
-  }
+  const fmtWord = (v) => (state.format === 'dec' ? String(VN.toSigned(v)) : VN.wordBin(v));
+  const fmtAddr = (v) => (state.format === 'dec' ? String(v) : VN.toBin(v, VN.ADDR_BITS));
   function fmt(value, kind) {
     if (kind === 'word') return fmtWord(value);
     if (kind === 'addr') return fmtAddr(value);
@@ -90,38 +50,27 @@
     return String(value);
   }
   function allForms(v, kind) {
-    const bits = kind === 'addr' ? VN.ADDR_BITS : VN.WORD_BITS;
-    const parts = [`bin ${VN.toBin(v, bits)}`, `dec ${v}`];
-    if (kind === 'word') parts.push(`signed ${VN.toSigned(v)}`, `as instruction: ${VN.disassemble(v)}`);
-    parts.push(`hex 0x${v.toString(16).toUpperCase()}`);
-    return parts.join(' · ');
+    if (kind === 'addr') return `binary ${VN.toBin(v, VN.ADDR_BITS)} · decimal ${v}`;
+    return `binary ${VN.wordBin(v)} · decimal ${VN.toSigned(v)} · as instruction: ${VN.disassemble(v)}`;
   }
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   }
-  function valSpan(v, kind) {
-    return `<span class="v" title="${esc(allForms(v, kind))}">${esc(fmt(v, kind))}</span>`;
-  }
-  function richText(text) {
-    return esc(text).replace(/\{([wa]):(\d+)\}/g, (_, k, n) => valSpan(Number(n), k === 'w' ? 'word' : 'addr'));
-  }
-  /** Parses a value typed by a student, in the current number format unless it has a 0b/0x/0d prefix. */
-  function parseUserValue(text, kind) {
+  const valSpan = (v, kind) => `<span class="v" title="${esc(allForms(v, kind))}">${esc(fmt(v, kind))}</span>`;
+  const richText = (text) => esc(text).replace(/\{([wa]):(\d+)\}/g, (_, k, n) => valSpan(Number(n), k === 'w' ? 'word' : 'addr'));
+
+  /** Parses a value typed by a student: binary digits in binary mode, a whole number in decimal mode, or 0b…. */
+  function parseUserValue(text, kind, format = state.format) {
     const t = text.trim().replace(/[\s_]/g, '');
     if (!t) return null;
     let v = null;
-    const pref = /^0([bxd])(.+)$/i.exec(t);
-    if (pref) {
-      const base = { b: 2, x: 16, d: 10 }[pref[1].toLowerCase()];
-      const ok = { 2: /^[01]+$/, 16: /^[0-9a-f]+$/i, 10: /^-?\d+$/ }[base].test(pref[2]);
-      v = ok ? parseInt(pref[2], base) : null;
-    } else if (state.format === 'bin') v = /^[01]+$/.test(t) ? parseInt(t, 2) : null;
-    else if (state.format === 'hex') v = /^[0-9a-f]+$/i.test(t) ? parseInt(t, 16) : null;
-    else v = /^-?\d+$/.test(t) ? parseInt(t, 10) : null;
+    if (/^0b[01]+$/i.test(t)) v = parseInt(t.slice(2), 2);
+    else if (format === 'bin') v = /^[01]+$/.test(t) ? parseInt(t, 2) : null;
+    else v = /^[+-]?\d+$/.test(t) ? parseInt(t, 10) : null;
     if (v === null) return null;
-    const max = kind === 'addr' ? VN.ADDR_MASK : VN.WORD_MASK;
-    if (v < 0 && kind === 'word' && v >= -128) v &= VN.WORD_MASK;
-    return v >= 0 && v <= max ? v : null;
+    if (kind === 'addr') return v >= 0 && v <= VN.ADDR_MASK ? v : null;
+    if (format === 'bin' && !/^-/.test(t)) return v <= VN.WORD_MASK ? v : null;
+    return v >= VN.MIN_VALUE && v <= VN.MAX_VALUE ? v & VN.WORD_MASK : null;
   }
 
   // ------------------------------------------------------------------------------------------------ persistence
@@ -135,10 +84,7 @@
   }
   function saveStore() {
     try {
-      localStorage.setItem(
-        STORE_KEY,
-        JSON.stringify({ asm: $('#asm-src').value, bin: $('#bin-src').value, input: $('#input-values').value, format: state.format }),
-      );
+      localStorage.setItem(STORE_KEY, JSON.stringify({ asm: $('#asm-src').value, input: $('#input-values').value, format: state.format }));
     } catch {
       /* storage unavailable (private mode): ignore */
     }
@@ -159,7 +105,7 @@
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => t.classList.remove('show'), 2200);
+    toast.timer = setTimeout(() => t.classList.remove('show'), 2600);
   }
   function setMsg(el, text, kind) {
     el.textContent = text;
@@ -168,78 +114,24 @@
 
   // ------------------------------------------------------------------------------------------------ program loading
 
-  function loadProgram(words, from) {
-    state.loadedWords = words.slice(0, VN.MEM_SIZE);
-    while (state.loadedWords.length < VN.MEM_SIZE) state.loadedWords.push(0);
-    state.loadedFrom = from;
-    resetMachine();
-  }
-
   function assembleAndLoad() {
     const asm = VN.assemble($('#asm-src').value);
     if (asm.errors.length) {
       setMsg($('#asm-msg'), asm.errors.map((e) => `Line ${e.line}: ${e.message}`).join('\n'), 'error');
       return false;
     }
-    loadProgram(asm.words, 'asm');
-    $('#bin-src').value = VN.formatBinary(asm.words);
+    state.loadedWords = asm.words.slice();
+    resetMachine();
     const last = asm.listing.length ? asm.listing[asm.listing.length - 1].addr : 0;
-    setMsg($('#asm-msg'), `Assembled ${asm.listing.length} words into cells 0–${last} and loaded them into memory.`, 'ok');
+    setMsg($('#asm-msg'), `Done: ${asm.listing.length} memory cells used (cells 0–${last}). Now press "Next step".`, 'ok');
     saveStore();
     return true;
-  }
-
-  function loadBinaryText(text, from) {
-    const r = VN.parseBinary(text);
-    if (r.errors.length) {
-      setMsg($('#asm-msg'), r.errors.map((e) => `Line ${e.line}: ${e.message}`).join('\n'), 'error');
-      return false;
-    }
-    if (!r.count) {
-      setMsg($('#asm-msg'), 'No binary words found. Write one 8-bit word per line, e.g. 00101110.', 'error');
-      return false;
-    }
-    loadProgram(r.words, from);
-    setMsg($('#asm-msg'), `Loaded ${r.count} binary words into memory.`, 'ok');
-    saveStore();
-    return true;
-  }
-
-  function loadFile(file) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const bytes = new Uint8Array(reader.result);
-      const isText = bytes.every((b) => b === 9 || b === 10 || b === 13 || (b >= 32 && b < 127) || b >= 0xc2);
-      if (!isText) {
-        // A real binary file: every byte is one memory word.
-        if (bytes.length > VN.MEM_SIZE) toast(`File has ${bytes.length} bytes; only the first ${VN.MEM_SIZE} are loaded.`);
-        const words = Array.from(bytes.slice(0, VN.MEM_SIZE));
-        loadProgram(words, 'file');
-        $('#bin-src').value = VN.formatBinary(state.loadedWords);
-        showTab('bin');
-        setMsg($('#asm-msg'), `Loaded ${words.length} bytes from ${file.name} (raw binary file).`, 'ok');
-        return;
-      }
-      const text = new TextDecoder().decode(bytes);
-      const bin = VN.parseBinary(text);
-      if (!bin.errors.length && bin.count) {
-        $('#bin-src').value = text;
-        showTab('bin');
-        loadBinaryText(text, 'file');
-      } else {
-        $('#asm-src').value = text;
-        showTab('asm');
-        assembleAndLoad();
-      }
-    };
-    reader.readAsArrayBuffer(file);
   }
 
   function applyInputField() {
     const r = VN.parseValueList($('#input-values').value);
     setMsg($('#input-msg'), r.errors.join('\n'), r.errors.length ? 'error' : '');
     machine.setInput(r.values);
-    return r;
   }
 
   // ------------------------------------------------------------------------------------------------ execution
@@ -252,7 +144,7 @@
     state.trace = [];
     state.traceOffset = 0;
     state.lastRec = null;
-    state.explainMode = 'step';
+    state.practiceView = state.practice ? 'form' : null;
     render();
   }
 
@@ -268,7 +160,7 @@
     }
     state.history.push({ snap, traceLen: state.trace.length, traceOffset: state.traceOffset, lastRec: state.lastRec });
     if (state.history.length > HISTORY_LIMIT) state.history.shift();
-    state.trace.push({ rec, instrNo, output: machine.output.length });
+    state.trace.push({ rec, instrNo });
     if (state.trace.length > TRACE_LIMIT) {
       state.trace.shift();
       state.traceOffset += 1;
@@ -277,8 +169,14 @@
     return true;
   }
 
+  /** Runs the rest of the current instruction. Returns its records (empty if nothing ran). */
   function doInstruction() {
-    while (doMicroStep()) if (state.lastRec.instructionDone) break;
+    const recs = [];
+    while (doMicroStep()) {
+      recs.push(state.lastRec);
+      if (state.lastRec.instructionDone) break;
+    }
+    return recs;
   }
 
   function stepBack() {
@@ -286,7 +184,6 @@
     if (!h) return;
     machine.restore(h.snap);
     applyInputField();
-    // Trace rows may have been dropped from the front since; keep what is still there.
     const drop = state.traceOffset - h.traceOffset;
     state.trace.length = Math.max(0, h.traceLen - drop);
     state.lastRec = h.lastRec;
@@ -295,26 +192,24 @@
   function startRun() {
     if (machine.halted) return;
     state.running = true;
-    state.explainMode = 'step';
-    let first = true;
+    const startCount = machine.instructionCount;
     const tick = () => {
       if (!state.running) return;
-      const speed = SPEEDS[$('#speed').value];
-      const batch = speed.ms === 0 ? 400 : 1;
+      const ms = Number($('#speed').value);
+      const batch = ms === 0 ? 500 : 1;
       for (let i = 0; i < batch; i++) {
-        if (!first && machine.atInstructionBoundary && state.breakpoints.has(machine.pc)) {
+        if (machine.instructionCount - startCount >= RUN_LIMIT) {
           stopRun();
-          toast(`Breakpoint: stopped before the instruction at address ${machine.pc}.`);
+          toast(`Stopped after ${RUN_LIMIT} instructions. Is the program missing a HALT, or is it in an endless loop?`);
           break;
         }
-        first = false;
         if (!doMicroStep()) {
           stopRun();
           break;
         }
       }
       render();
-      if (state.running) state.timer = setTimeout(tick, speed.ms);
+      if (state.running) state.timer = setTimeout(tick, ms);
     };
     tick();
   }
@@ -323,123 +218,150 @@
     clearTimeout(state.timer);
   }
 
-  // ------------------------------------------------------------------------------------------------ predict mode
+  // ------------------------------------------------------------------------------------------------ practice mode
 
-  function openPredict() {
-    state.explainMode = 'predict';
+  function setPractice(on) {
+    stopRun();
+    state.practice = on;
+    state.practiceView = on ? 'form' : null;
+    if (on && !machine.atInstructionBoundary) doInstruction(); // practice starts at the beginning of an instruction
+    const b = $('#btn-practice');
+    b.setAttribute('aria-pressed', String(on));
+    b.innerHTML = `🎯 Practice mode: <b>${on ? 'ON' : 'OFF'}</b>`;
+    b.classList.toggle('on', on);
+    render();
+  }
+
+  function practiceFormHtml() {
+    if (machine.halted) {
+      return `<div class="practice"><h3>The program has finished (HALT).</h3>
+        <p>${scoreText()}</p><p>Press <b>⟲ Reset</b> to practice the same program again, or choose another example.</p></div>`;
+    }
+    const cur = machine.registers();
+    const ph = (kind) => (state.format === 'dec' ? 'e.g. 5' : kind === 'addr' ? 'e.g. 0101' : 'e.g. 0011 0101');
     const fields = PREDICT_FIELDS.map(
-      (f) => `<label>${f.label}<input type="text" data-key="${f.key}" autocomplete="off" spellcheck="false" placeholder="${esc(fmt(0, f.kind))}"></label>`,
+      (f) => `<label><span class="lbl">${f.label}</span><input type="text" data-key="${f.key}" autocomplete="off" spellcheck="false" placeholder="${ph(f.kind)}"><small>${f.hint}</small></label>`,
     ).join('');
-    $('#explain').innerHTML = `
-      <div class="predict">
-        <h3>Predict: what will the registers hold after the next instruction completes?</h3>
-        <p class="next">The next instruction is at address ${valSpan(machine.pc, 'addr')}. Look at that memory cell, work through fetch, decode and execute on paper, then type your answers in the current number format (${esc($('#format').selectedOptions[0].text)}). You can also use a prefix: 0b101, 0x1F, 0d12.</p>
-        <div class="predict-grid">${fields}</div>
-        <div class="btn-row">
-          <button id="btn-check" class="primary">Check &amp; run instruction</button>
-          <button id="btn-skip">Skip (just run it)</button>
-          <span class="score">${scoreText()}</span>
-        </div>
-        <div id="predict-msg" class="msg"></div>
-      </div>`;
-    $('#explain input').focus();
-    $('#btn-check').onclick = checkPredict;
-    $('#btn-skip').onclick = () => {
-      state.explainMode = 'step';
-      doInstruction();
-      render();
-    };
-    $('#explain').querySelectorAll('input').forEach((inp) =>
-      inp.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') checkPredict();
-      }),
-    );
+    const ccSelect = (k) => `<label class="cc"><span class="lbl">${k.toUpperCase()}</span><select data-key="${k}"><option value="">?</option><option>0</option><option>1</option></select></label>`;
+    return `<div class="practice">
+      <h3>🎯 Predict the next instruction</h3>
+      <ol class="practice-steps">
+        <li>PC is ${valSpan(machine.pc, 'addr')}, so the next instruction is in <b>memory cell ${machine.pc}</b>. Find it in the Memory editor.</li>
+        <li>Decode it: the first 4 bits are the <b>op code</b> (see the instruction table at the bottom of the page), and the last 4 bits are the <b>address X</b>.</li>
+        <li>On paper, go through <b>fetch, decode and execute</b>.</li>
+        <li>Write what each register will hold <b>after the whole instruction is finished</b>.</li>
+      </ol>
+      <p class="now">Registers now: PC ${valSpan(cur.pc, 'addr')} · IR ${valSpan(cur.ir, 'word')} · MAR ${valSpan(cur.mar, 'addr')} · MDR ${valSpan(cur.mdr, 'word')} · R ${valSpan(cur.r, 'word')} · GT ${cur.gt} EQ ${cur.eq} LT ${cur.lt}</p>
+      <div class="predict-grid">${fields}<div class="cc-group">${['gt', 'eq', 'lt'].map(ccSelect).join('')}<small>condition codes</small></div></div>
+      <p class="hint">Type ${state.format === 'dec' ? 'decimal numbers (−128 … 127)' : 'binary digits (4 for an address, 8 for a value; spaces are allowed)'}. You can change this with "Show numbers in" at the top.</p>
+      <div class="btn-row">
+        <button id="btn-check" class="primary">Check my answers</button>
+        <button id="btn-reveal">Show me the answer</button>
+        <span class="score">${scoreText()}</span>
+      </div>
+      <div id="predict-msg" class="msg"></div>
+    </div>`;
   }
 
   function scoreText() {
-    const s = state.predictStats;
-    return s.answered ? `Fully correct: ${s.perfect} / ${s.answered} instructions` : '';
+    const s = state.practiceStats;
+    return s.answered ? `Score: ${s.perfect} of ${s.answered} instructions fully correct.` : '';
   }
 
-  function checkPredict() {
+  function checkPredict(reveal) {
     const sim = machine.clone();
-    const recs = sim.stepInstruction();
-    if (recs.length && recs[recs.length - 1].blocked) {
-      setMsg($('#predict-msg'), 'This instruction reads input, but the Input box is empty. Add an input value first.', 'error');
+    const preview = sim.stepInstruction();
+    if (preview.length && preview[preview.length - 1].blocked) {
+      setMsg($('#predict-msg'), 'This instruction is IN, but the Input box has no values left. Type an input value first.', 'error');
       return;
     }
     const rows = PREDICT_FIELDS.map((f) => {
       const raw = $(`#explain input[data-key="${f.key}"]`).value;
       const guess = parseUserValue(raw, f.kind);
-      return { ...f, raw, guess, correct: sim[f.key], ok: guess === sim[f.key] };
+      return { label: f.label, kind: f.kind, raw, guess, correct: sim[f.key], ok: guess === sim[f.key] };
     });
-    state.predictStats.answered += 1;
-    if (rows.every((r) => r.ok)) state.predictStats.perfect += 1;
-    doInstruction();
-    state.predictResult = rows;
-    state.explainMode = 'predict-result';
+    for (const k of ['gt', 'eq', 'lt']) {
+      const raw = $(`#explain select[data-key="${k}"]`).value;
+      rows.push({ label: k.toUpperCase(), kind: 'bit', raw, guess: raw === '' ? null : Number(raw), correct: sim[k], ok: raw !== '' && Number(raw) === sim[k] });
+    }
+    if (!reveal) {
+      state.practiceStats.answered += 1;
+      if (rows.every((r) => r.ok)) state.practiceStats.perfect += 1;
+    }
+    const startPc = machine.pc;
+    const recs = doInstruction();
+    state.practiceResult = { rows, recs, reveal, startPc };
+    state.practiceView = 'result';
     render();
   }
 
-  function predictResultHtml() {
-    const rows = state.predictResult
-      .map(
-        (r) => `<tr><td>${r.label}</td><td class="mono">${r.raw ? esc(r.raw) : '<i>empty</i>'}${r.raw && r.guess === null ? ' (not a valid value)' : ''}</td>
-          <td>${valSpan(r.correct, r.kind)}</td><td class="${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✗'}</td></tr>`,
-      )
+  function practiceResultHtml() {
+    const { rows, recs, reveal, startPc } = state.practiceResult;
+    const all = rows.every((r) => r.ok);
+    const show = (r) => (r.kind === 'bit' ? String(r.correct) : valSpan(r.correct, r.kind));
+    const body = rows
+      .map((r) => {
+        const yours = reveal ? '' : `<td class="mono">${r.raw === '' ? '<i>empty</i>' : esc(r.raw)}${r.raw !== '' && r.guess === null ? ' <small>(not a valid value)</small>' : ''}</td>`;
+        const mark = reveal ? '' : `<td class="${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✗'}</td>`;
+        return `<tr><td><b>${r.label}</b></td>${yours}<td>${show(r)}</td>${mark}</tr>`;
+      })
       .join('');
-    const all = state.predictResult.every((r) => r.ok);
-    return `<div class="predict">
-      <h3>${all ? 'All correct!' : 'Check the red rows, then read the step explanations in the trace below.'}</h3>
-      <table class="io-table predict-result"><thead><tr><th>Register</th><th>Your answer</th><th>Correct</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="score">${scoreText()} · Press <b>Instruction ▶▶</b> to predict the next one.</p></div>`;
+    const steps = recs.map((r) => `<li><span class="badge ${r.phase}">${r.phase}</span> <code>${esc(r.rtl)}</code></li>`).join('');
+    const ins = recs.find((r) => r.op === 'DECODE');
+    const name = ins ? VN.disassemble(machine.ir) : '';
+    const title = reveal ? 'Here is the answer.' : all ? '✅ All correct, well done!' : '❌ Some answers are wrong. Compare them with the correct values below.';
+    return `<div class="practice">
+      <h3>${title}</h3>
+      <p>The instruction in cell ${startPc} was <b>${esc(name)}</b>. The registers after it finished:</p>
+      <table class="io-table predict-result"><thead><tr><th>Register</th>${reveal ? '' : '<th>Your answer</th>'}<th>Correct</th>${reveal ? '' : '<th></th>'}</tr></thead><tbody>${body}</tbody></table>
+      <h4>What happened, step by step</h4>
+      <ol class="step-list">${steps}</ol>
+      <p class="hint">The execution trace below shows the register values after every step.</p>
+      <div class="btn-row">
+        ${machine.halted ? '' : '<button id="btn-next-predict" class="primary">Predict the next instruction ▶</button>'}
+        <span class="score">${scoreText()}</span>
+      </div>
+      ${machine.halted ? '<p><b>The program has finished.</b> Press ⟲ Reset to practice again.</p>' : ''}
+    </div>`;
   }
 
   // ------------------------------------------------------------------------------------------------ rendering
 
   function buildStatic() {
-    // Memory rows inside the SVG: two columns of 16.
+    // Memory rows inside the SVG.
     const g = $('#mem-rows');
     const ns = 'http://www.w3.org/2000/svg';
     for (let i = 0; i < VN.MEM_SIZE; i++) {
-      const col = Math.floor(i / 16);
-      const x = 640 + col * 105;
-      const y = 44 + (i % 16) * 19;
+      const y = 40 + i * 19.5;
       const row = document.createElementNS(ns, 'g');
       row.setAttribute('class', 'mrow');
       row.id = `m-${i}`;
-      row.innerHTML = `<rect x="${x}" y="${y}" width="100" height="18" rx="3"></rect>
-        <text class="maddr" x="${x + 20}" y="${y + 13}">${i}</text>
-        <text class="mval" x="${x + 27}" y="${y + 13}"></text>`;
+      row.innerHTML = `<rect x="638" y="${y}" width="204" height="18" rx="3"></rect>
+        <text class="maddr" x="644" y="${y + 13}">${VN.toBin(i, VN.ADDR_BITS)}</text>
+        <text class="mval" x="682" y="${y + 13}"></text>
+        <text class="mdis" x="752" y="${y + 13}"></text>`;
       g.appendChild(row);
     }
 
-    // Memory table.
+    // Memory editor.
     const tbody = $('#mem-table tbody');
     for (let i = 0; i < VN.MEM_SIZE; i++) {
       const tr = document.createElement('tr');
       tr.id = `mt-${i}`;
-      if (i === VN.IN_ADDR || i === VN.OUT_ADDR) tr.classList.add('io');
-      tr.innerHTML = `<td class="addr" title="Click to toggle a breakpoint"></td>
-        <td><input type="text" maxlength="12" aria-label="Contents of cell ${i}" spellcheck="false"></td>
+      tr.innerHTML = `<td class="addr">${VN.toBin(i, VN.ADDR_BITS)} <small>(${i})</small></td>
+        <td><input type="text" maxlength="9" aria-label="Contents of cell ${i}, 8 binary digits" spellcheck="false"></td>
         <td class="num"></td><td class="dis"></td>`;
-      tr.querySelector('.addr').addEventListener('click', () => {
-        if (state.breakpoints.has(i)) state.breakpoints.delete(i);
-        else state.breakpoints.add(i);
-        render();
-      });
       const inp = tr.querySelector('input');
       inp.addEventListener('change', () => {
-        const v = parseUserValue(inp.value, 'word');
-        if (v === null) {
+        const v = parseUserValue(inp.value, 'word', 'bin');
+        if (v === null || inp.value.replace(/\s/g, '').length !== VN.WORD_BITS) {
           inp.classList.add('invalid');
-          toast(`Cell ${i}: not a valid 8-bit value.`);
+          toast(`Cell ${i}: type exactly 8 binary digits, e.g. 0011 0101.`);
           return;
         }
         inp.classList.remove('invalid');
         machine.mem[i] = v;
         state.loadedWords[i] = v;
-        state.loadedFrom = 'edit';
         render();
       });
       inp.addEventListener('keydown', (e) => {
@@ -450,12 +372,11 @@
 
     // Instruction set reference.
     $('#isa-table tbody').innerHTML = VN.INSTRUCTIONS.map(
-      (ins) => `<tr><td>${VN.toBin(ins.opcode, VN.OPCODE_BITS)}</td><td>${ins.mnemonic}${ins.operand ? ' a' : ''}</td>
-        <td>${esc(ins.summary)}<br><code>${esc(ins.rtl)}</code></td>
-        <td>${VN.EXEC_PLANS[ins.mnemonic].map((op) => esc(OP_RTL[op])).join('<br>')}</td></tr>`,
+      (ins) => `<tr><td>${VN.toBin(ins.opcode, VN.OPCODE_BITS)} <small>(${ins.opcode})</small></td><td>${ins.name}${ins.noOperand ? '' : ' X'}</td>
+        <td><code>${esc(ins.meaning)}</code><br>${esc(ins.summary)}</td>
+        <td>${VN.EXEC_PLANS[ins.name].map(([op, p]) => esc(VN.microText(op, p))).join('<br>')}</td></tr>`,
     ).join('');
 
-    // Examples menu.
     $('#examples').innerHTML += EXAMPLES.map((ex) => `<option value="${ex.id}">${esc(ex.title)}</option>`).join('');
   }
 
@@ -465,16 +386,19 @@
     const changes = (rec && rec.changes) || {};
 
     // Registers.
-    const regs = { PC: [machine.pc, 'addr', 'pc'], IR: [machine.ir, 'word', 'ir'], MAR: [machine.mar, 'addr', 'mar'], MDR: [machine.mdr, 'word', 'mdr'], AC: [machine.ac, 'word', 'ac'] };
-    for (const [name, [v, kind, key]] of Object.entries(regs)) {
+    const regs = { PC: ['pc', 'addr'], IR: ['ir', 'word'], MAR: ['mar', 'addr'], MDR: ['mdr', 'word'], R: ['r', 'word'] };
+    for (const [name, [key, kind]] of Object.entries(regs)) {
       const el = $(`#v-${name}`);
-      el.textContent = fmt(v, kind);
+      el.textContent = fmt(machine[key], kind);
       el.classList.toggle('changed', key in changes);
-      setTitle(el.parentNode, `${name} = ${allForms(v, kind)}`);
+      setTitle(el.parentNode, `${name} = ${allForms(machine[key], kind)}`);
     }
-    $('#v-FLAGS').textContent = `Z=${machine.z ? 1 : 0}  N=${machine.n ? 1 : 0}`;
-    $('#v-FLAGS').classList.toggle('changed', 'z' in changes || 'n' in changes);
-    $('#v-ALU').textContent = rec && (rec.op === 'EXEC_ADD' || rec.op === 'EXEC_SUB') ? rec.op.slice(5) : '';
+    for (const k of ['gt', 'eq', 'lt']) {
+      const el = $(`#v-${k.toUpperCase()}`);
+      el.textContent = String(machine[k]);
+      el.classList.toggle('changed', k in changes);
+    }
+    $('#v-ALU').textContent = rec && rec.alu ? `selected: ${rec.alu}` : '';
 
     // Control unit.
     const phase = machine.halted ? 'HALTED' : rec ? rec.phase : 'READY';
@@ -482,59 +406,56 @@
     cuPhase.textContent = waiting ? 'Waiting for input' : phase === 'READY' ? 'Ready' : phase === 'HALTED' ? 'Halted' : `Phase: ${phase}`;
     cuPhase.setAttribute('class', `cu-line strong phase-${waiting ? 'HALTED' : phase}`);
     const d = machine.decoded;
-    $('#cu-instr').textContent = d ? `Instruction: ${VN.disassemble(machine.ir)}  (${VN.toBin(d.opcode, VN.OPCODE_BITS)} ${VN.toBin(d.operand, VN.ADDR_BITS)})` : 'Instruction: (not decoded yet)';
+    $('#cu-instr').textContent = d ? `Instruction: ${VN.disassemble(machine.ir)}` : 'Instruction: (not decoded yet)';
     $('#cu-rtl').textContent = rec ? rec.rtl : '';
-    $('#cu-clock').textContent = `clock step ${machine.stepCount} · instructions done ${machine.instructionCount}`;
+    $('#cu-clock').textContent = `step ${machine.stepCount} · instructions done ${machine.instructionCount}`;
 
     // Active components, wires, buses.
     const active = new Set((state.lastRec && state.lastRec.active) || (waiting ? ['CU', 'IN'] : []));
     for (const c of COMPONENTS) $(`#c-${c}`).classList.toggle('active', active.has(c));
     const wires = new Set((rec && rec.wires) || []);
-    for (const w of WIRES) $(`#${w}`).classList.toggle('active', wires.has(w));
+    $$('[data-wire]').forEach((w) => w.classList.toggle('active', wires.has(w.dataset.wire)));
     const bus = (rec && rec.bus) || {};
-    $('#t-bus-internal').textContent = bus.internal !== undefined ? fmt(bus.internal, ADDR_BUS_OPS.has(rec.op) ? 'addr' : 'word') : '';
+    $('#t-bus-internal').textContent = bus.internal !== undefined ? fmt(bus.internal, bus.internalKind) : '';
     $('#t-bus-addr').textContent = bus.address !== undefined ? fmtAddr(bus.address) : '';
     $('#t-bus-data').textContent = bus.data !== undefined ? fmtWord(bus.data) : '';
     $('#t-bus-ctrl').textContent = bus.control || '';
 
-    // Memory (diagram + table).
+    // Memory (diagram + editor). Contents are always shown in binary.
     const written = new Set(((rec && rec.memWrites) || []).map((w) => w.addr));
     for (let i = 0; i < VN.MEM_SIZE; i++) {
       const v = machine.mem[i];
       const isPc = i === machine.pc && !machine.halted;
       const isAccess = bus.address === i;
       const row = $(`#m-${i}`);
-      row.querySelector('.mval').textContent = fmtWord(v);
+      row.querySelector('.mval').textContent = VN.wordBin(v);
+      row.querySelector('.mdis').textContent = VN.disassemble(v);
       row.setAttribute('class', `mrow${isPc ? ' pc' : ''}${isAccess ? ' access' : ''}${written.has(i) ? ' written' : ''}`);
       setTitle(row, `cell ${i}: ${allForms(v, 'word')}`);
 
       const tr = $(`#mt-${i}`);
       tr.classList.toggle('pc', isPc);
       tr.classList.toggle('access', isAccess);
-      tr.classList.toggle('bp', state.breakpoints.has(i));
-      tr.querySelector('.addr').innerHTML = `${fmtAddr(i)}${state.format === 'bin' ? ` <small>(${i})</small>` : ''}`;
+      tr.classList.toggle('written', written.has(i));
       const inp = tr.querySelector('input');
       if (document.activeElement !== inp) {
-        inp.value = fmtWord(v);
+        inp.value = VN.wordBin(v);
         inp.classList.remove('invalid');
       }
-      tr.querySelector('.num').textContent = state.format === 'dec' ? String(VN.toSigned(v)) : String(v);
-      tr.querySelector('.dis').textContent =
-        i === VN.IN_ADDR ? 'input port' : i === VN.OUT_ADDR ? 'output port' : VN.disassemble(v) + (isPc ? ' ◀PC' : '');
+      tr.querySelector('.num').textContent = String(VN.toSigned(v));
+      tr.querySelector('.dis').innerHTML = `${esc(VN.disassemble(v))}${isPc ? ' <span class="pc-tag">◀PC</span>' : ''}`;
     }
 
     // I/O.
     const nextIn = machine.input[machine.inputPos];
-    $('#v-IN').textContent = nextIn === undefined ? '(empty)' : `next: ${fmtWord(nextIn)}`;
+    $('#v-IN').textContent = nextIn === undefined ? '(empty)' : `next: ${VN.toSigned(nextIn)}`;
     const lastOut = machine.output[machine.output.length - 1];
-    $('#v-OUT').textContent = lastOut === undefined ? '—' : fmtWord(lastOut);
+    $('#v-OUT').textContent = lastOut === undefined ? '—' : String(VN.toSigned(lastOut));
     $('#input-chips').innerHTML = machine.input.length
-      ? machine.input
-          .map((v, i) => `<span class="chip${i < machine.inputPos ? ' used' : i === machine.inputPos ? ' next' : ''}" title="${esc(allForms(v, 'word'))}">${esc(fmtWord(v))}</span>`)
-          .join('')
+      ? machine.input.map((v, i) => `<span class="chip${i < machine.inputPos ? ' used' : i === machine.inputPos ? ' next' : ''}">${VN.toSigned(v)}</span>`).join('')
       : '<span class="empty">no input values</span>';
     $('#output-list').innerHTML = machine.output.length
-      ? machine.output.map((v) => `<span class="chip" title="${esc(allForms(v, 'word'))}">${esc(fmtWord(v))}</span>`).join('')
+      ? machine.output.map((v) => `<span class="chip">${VN.toSigned(v)}</span>`).join('')
       : '<span class="empty">nothing printed yet</span>';
     $('#input-values').closest('.field').classList.toggle('attention', waiting);
 
@@ -542,10 +463,11 @@
     renderExplain(rec, waiting);
     renderTrace();
 
+    const locked = state.practice;
     $('#btn-back').disabled = state.history.length === 0;
-    $('#btn-micro').disabled = machine.halted;
-    $('#btn-instr').disabled = machine.halted;
-    $('#btn-run').disabled = machine.halted && !state.running;
+    $('#btn-micro').disabled = machine.halted || locked;
+    $('#btn-instr').disabled = machine.halted || locked;
+    $('#btn-run').disabled = (machine.halted && !state.running) || locked;
     $('#btn-run').textContent = state.running ? 'Pause ❚❚' : 'Run ▶▶▶';
   }
 
@@ -559,127 +481,122 @@
   }
 
   function nextStepText() {
-    if (machine.halted) return '';
-    const q = machine.queue[0];
-    const op = q ? q.op : 'FETCH_MAR';
-    return `Next step: ${q ? q.phase : 'FETCH'} · ${OP_RTL[op]}`;
+    const n = machine.nextMicro;
+    return n ? `Next: ${n.phase} · ${VN.microText(n.op, n.param)}` : '';
   }
 
   function renderStatus(waiting) {
-    let st = '<span>State: <b>Ready</b></span>';
-    if (state.running) st = '<span>State: <span class="state-run">Running</span></span>';
-    else if (machine.halted) st = '<span>State: <span class="state-halted">Halted</span></span>';
-    else if (waiting) st = '<span>State: <span class="state-wait">Waiting for input</span></span>';
-    else if (machine.stepCount) st = '<span>State: <b>Paused</b></span>';
-    $('#status').innerHTML = `${st}<span>Instructions done: <b>${machine.instructionCount}</b></span><span>Clock steps: <b>${machine.stepCount}</b></span><span>${esc(nextStepText())}</span>`;
+    let st = '<b>Ready</b>';
+    if (state.running) st = '<span class="state-run">Running</span>';
+    else if (machine.halted) st = '<span class="state-halted">Halted</span>';
+    else if (waiting) st = '<span class="state-wait">Waiting for input</span>';
+    else if (machine.stepCount) st = '<b>Paused</b>';
+    $('#status').innerHTML = `<span>State: ${st}</span><span>Instructions done: <b>${machine.instructionCount}</b></span><span>Steps: <b>${machine.stepCount}</b></span><span>${esc(nextStepText())}</span>`;
   }
 
   function renderExplain(rec, waiting) {
     const box = $('#explain');
-    if (state.explainMode === 'predict') return; // form is live; do not overwrite what the student typed
-    let html = '';
-    if (state.explainMode === 'predict-result' && state.predictResult) html += predictResultHtml();
+    if (state.practice) {
+      if (state.practiceView === 'result' && state.practiceResult) {
+        box.innerHTML = practiceResultHtml();
+        const nb = $('#btn-next-predict');
+        if (nb)
+          nb.onclick = () => {
+            state.practiceView = 'form';
+            render();
+          };
+        return;
+      }
+      if (box.dataset.view === 'form' && box.dataset.pc === String(machine.pc) && box.dataset.steps === String(machine.stepCount) && box.dataset.fmt === state.format) return; // keep typed answers
+      box.innerHTML = practiceFormHtml();
+      Object.assign(box.dataset, { view: 'form', pc: String(machine.pc), steps: String(machine.stepCount), fmt: state.format });
+      const check = $('#btn-check');
+      if (check) {
+        check.onclick = () => checkPredict(false);
+        $('#btn-reveal').onclick = () => checkPredict(true);
+        box.querySelectorAll('input').forEach((inp) => inp.addEventListener('keydown', (e) => e.key === 'Enter' && checkPredict(false)));
+      }
+      return;
+    }
+    box.dataset.view = '';
 
+    let html;
     if (waiting) {
-      html += `<div class="head"><span class="badge WAIT">WAITING FOR INPUT</span><span class="rtl">${esc(state.lastRec.rtl)}</span></div>
+      html = `<div class="head"><span class="badge WAIT">WAITING FOR INPUT</span><span class="rtl">${esc(state.lastRec.rtl)}</span></div>
         <p>${richText(state.lastRec.text)}</p>`;
     } else if (!rec) {
-      html += `<div class="head"><span class="badge READY">READY</span></div>
-        <p>The program is in memory and every register is 0, so the first instruction is fetched from address 0.
-        Press <b>Micro-step</b> to execute one clock step (one micro-operation) and see which components and buses take part,
-        or <b>Instruction</b> to run a whole fetch–decode–execute cycle.</p>
+      html = `<div class="head"><span class="badge READY">READY</span></div>
+        <p>The program is in memory, and all registers are 0. Because PC = 0, the first instruction will be fetched from memory cell 0.</p>
+        <p>Press <b>Next step</b> to run one step of the instruction cycle and see which parts of the computer take part.
+        Press <b>Next instruction</b> to run all steps of one instruction (fetch, decode and execute).</p>
         <p class="next">${esc(nextStepText())}</p>`;
     } else {
+      const ports = (list) =>
+        list.length
+          ? list.map((p) => `<span class="port"><span>${esc(p.label)}:</span> ${p.kind === 'text' || p.kind === 'bit' ? `<b>${esc(p.value)}</b>` : valSpan(p.value, p.kind)}</span>`).join('')
+          : '<span class="port"><span>—</span></span>';
       const ioRows = (rec.ioTable || [])
-        .map((row) => {
-          const ports = (list) =>
-            list.length ? list.map((p) => `<span class="port"><span>${esc(p.label)}:</span> ${p.kind === 'text' ? `<b>${esc(p.value)}</b>` : valSpan(p.value, p.kind === 'bit' ? 'text' : p.kind)}</span>`).join('') : '<span class="port"><span>(none)</span></span>';
-          return `<tr><td>${esc(componentName(row.component))}</td><td>${ports(row.inputs)}</td><td>${ports(row.outputs)}</td></tr>`;
-        })
+        .map((row) => `<tr><td>${esc(COMPONENT_NAMES[row.component] || row.component)}</td><td>${ports(row.inputs)}</td><td>${ports(row.outputs)}</td></tr>`)
         .join('');
-      html += `<div class="head"><span class="badge ${rec.phase}">${rec.phase}</span><span class="rtl">${esc(rec.rtl)}</span>
-          <span class="next">clock step ${rec.step}${rec.instructionDone ? ' · instruction complete' : ''}</span></div>
+      html = `<div class="head"><span class="badge ${rec.phase}">${rec.phase}</span><span class="rtl">${esc(rec.rtl)}</span>
+          <span class="next">step ${rec.step}${rec.instructionDone ? ' · instruction finished' : ''}</span></div>
         <p>${richText(rec.text)}</p>
-        <table class="io-table"><thead><tr><th>Component</th><th>Inputs</th><th>Outputs</th></tr></thead><tbody>${ioRows}</tbody></table>
+        <table class="io-table"><thead><tr><th>Part</th><th>Gets (input)</th><th>Gives (output)</th></tr></thead><tbody>${ioRows}</tbody></table>
         <p class="next">${esc(nextStepText())}</p>`;
     }
     box.innerHTML = html;
-  }
-
-  function componentName(c) {
-    return { CU: 'Control unit', MEM: 'Memory', FLAGS: 'Flags', IN: 'Input device', OUT: 'Output device' }[c] || c;
   }
 
   function traceCells(t) {
     const r = t.rec;
     const g = r.registers;
     const chg = r.changes;
-    const cell = (key, v, kind) => ({ text: fmt(v, kind), chg: key in chg });
-    let extra = r.memWrites.map((w) => (w.addr === VN.OUT_ADDR ? `OUT ${fmtWord(w.to)}` : `M[${fmtAddr(w.addr)}] ← ${fmtWord(w.to)}`)).join(', ');
-    if (r.io === 'IN') extra = `IN ${fmtWord(r.bus.data)}`;
-    if (r.io === 'OUT') extra = `OUT ${fmtWord(r.bus.data)}`;
+    const cell = (key, kind) => ({ text: fmt(g[key], kind), chg: key in chg });
+    let extra = r.memWrites.map((w) => `CON(${fmtAddr(w.addr)}) = ${fmtWord(w.to)}`).join(', ');
+    if (r.io === 'IN') extra = `input ${VN.toSigned(r.registers.mdr)}`;
+    if (r.io === 'OUT') extra = `output ${VN.toSigned(r.registers.mdr)}`;
     return [
       { text: String(r.step) },
       { text: String(t.instrNo) },
       { text: r.phase, cls: `ph-${r.phase}` },
       { text: r.rtl },
-      cell('pc', g.pc, 'addr'),
-      cell('mar', g.mar, 'addr'),
-      cell('mdr', g.mdr, 'word'),
-      cell('ir', g.ir, 'word'),
-      cell('ac', g.ac, 'word'),
-      { text: g.z ? '1' : '0', chg: 'z' in chg },
-      { text: g.n ? '1' : '0', chg: 'n' in chg },
+      cell('pc', 'addr'),
+      cell('mar', 'addr'),
+      cell('mdr', 'word'),
+      cell('ir', 'word'),
+      cell('r', 'word'),
+      { text: String(g.gt), chg: 'gt' in chg },
+      { text: String(g.eq), chg: 'eq' in chg },
+      { text: String(g.lt), chg: 'lt' in chg },
       { text: extra },
     ];
   }
 
-  function visibleTrace() {
-    return $('#trace-instr-only').checked ? state.trace.filter((t) => t.rec.instructionDone) : state.trace;
-  }
+  const visibleTrace = () => ($('#trace-instr-only').checked ? state.trace.filter((t) => t.rec.instructionDone) : state.trace);
 
   function renderTrace() {
     const rows = visibleTrace();
     const shown = rows.slice(-TRACE_VISIBLE);
     $('#trace-table tbody').innerHTML = shown
-      .map((t) => {
-        const cells = traceCells(t)
-          .map((c) => `<td class="${c.cls || ''}${c.chg ? ' chg' : ''}">${esc(c.text)}</td>`)
-          .join('');
-        return `<tr class="${t.rec.instructionDone ? 'instr-end' : ''}">${cells}</tr>`;
-      })
+      .map((t) => `<tr class="${t.rec.instructionDone ? 'instr-end' : ''}">${traceCells(t).map((c) => `<td class="${c.cls || ''}${c.chg ? ' chg' : ''}">${esc(c.text)}</td>`).join('')}</tr>`)
       .join('');
     const wrap = $('.trace-wrap');
     wrap.scrollTop = wrap.scrollHeight;
     const hidden = rows.length - shown.length + state.traceOffset;
     $('#trace-note').textContent =
-      (rows.length ? 'Values are after the step; red = changed by that step. ' : 'Steps you execute appear here. ') +
-      (hidden > 0 ? `Showing the last ${shown.length} rows; Export CSV has all ${rows.length}.` : '');
+      (rows.length ? 'Values are after each step. Red = changed by that step. ' : 'The steps you run appear here. ') +
+      (hidden > 0 ? `Showing the last ${shown.length} rows; Export CSV has all of them.` : '');
   }
 
   function exportCsv() {
-    const head = ['step', 'instruction', 'phase', 'micro-operation', 'PC', 'MAR', 'MDR', 'IR', 'AC', 'Z', 'N', 'memory write / output'];
+    const head = ['step', 'instruction', 'phase', 'micro-operation', 'PC', 'MAR', 'MDR', 'IR', 'R', 'GT', 'EQ', 'LT', 'memory / I/O'];
     const q = (s) => `"${String(s).replace(/"/g, '""')}"`;
     const lines = [head.map(q).join(',')].concat(visibleTrace().map((t) => traceCells(t).map((c) => q(c.text)).join(',')));
-    download('trace.csv', lines.join('\r\n'), 'text/csv');
-  }
-
-  function download(name, text, type) {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type }));
-    a.download = name;
+    a.href = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv' }));
+    a.download = 'trace.csv';
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  }
-
-  function showTab(name) {
-    document.querySelectorAll('.tab').forEach((t) => {
-      const on = t.dataset.tab === name;
-      t.classList.toggle('active', on);
-      t.setAttribute('aria-selected', String(on));
-    });
-    $('#tab-asm').classList.toggle('hidden', name !== 'asm');
-    $('#tab-bin').classList.toggle('hidden', name !== 'bin');
   }
 
   function loadExample(id) {
@@ -687,14 +604,12 @@
     if (!ex) return;
     $('#asm-src').value = ex.source;
     $('#input-values').value = ex.input;
-    showTab('asm');
     assembleAndLoad();
   }
 
   function shareLink() {
     const params = new URLSearchParams();
-    if (state.loadedFrom === 'asm') params.set('src', b64encode($('#asm-src').value));
-    else params.set('mem', state.loadedWords.map((w) => w.toString(16).padStart(2, '0')).join(''));
+    params.set('src', b64encode($('#asm-src').value));
     if ($('#input-values').value.trim()) params.set('in', $('#input-values').value.trim());
     const url = `${location.href.split('#')[0]}#${params}`;
     const done = () => toast('Link copied. Anyone who opens it gets this program.');
@@ -711,15 +626,6 @@
         $('#asm-src').value = b64decode(p.get('src'));
         return assembleAndLoad();
       }
-      if (p.has('mem')) {
-        const hex = p.get('mem');
-        const words = [];
-        for (let i = 0; i + 1 < hex.length && words.length < VN.MEM_SIZE; i += 2) words.push(parseInt(hex.slice(i, i + 2), 16) || 0);
-        loadProgram(words, 'bin');
-        $('#bin-src').value = VN.formatBinary(state.loadedWords);
-        showTab('bin');
-        return true;
-      }
     } catch {
       toast('The link could not be read; loading the default program.');
     }
@@ -731,22 +637,18 @@
   function wire() {
     const act = (fn) => () => {
       stopRun();
-      state.explainMode = 'step';
       fn();
       render();
     };
     $('#btn-micro').onclick = act(doMicroStep);
-    $('#btn-instr').onclick = () => {
-      stopRun();
-      if ($('#predict-toggle').checked && !machine.halted && machine.atInstructionBoundary && state.explainMode !== 'predict') {
-        openPredict();
-        return;
+    $('#btn-instr').onclick = act(doInstruction);
+    $('#btn-back').onclick = act(() => {
+      stepBack();
+      if (state.practice) {
+        while (!machine.atInstructionBoundary && state.history.length) stepBack(); // back to an instruction start
+        state.practiceView = 'form';
       }
-      state.explainMode = 'step';
-      doInstruction();
-      render();
-    };
-    $('#btn-back').onclick = act(stepBack);
+    });
     $('#btn-reset').onclick = act(resetMachine);
     $('#btn-run').onclick = () => {
       if (state.running) {
@@ -754,33 +656,21 @@
         render();
       } else startRun();
     };
-    $('#speed').oninput = () => ($('#speed-label').textContent = SPEEDS[$('#speed').value].label);
-    $('#speed').oninput();
-    $('#predict-toggle').onchange = () => {
-      if (!$('#predict-toggle').checked && state.explainMode === 'predict') state.explainMode = 'step';
-      render();
-      if ($('#predict-toggle').checked) toast('Predict mode on: press Instruction ▶▶ to predict the next instruction.');
-    };
+    $('#btn-practice').onclick = () => setPractice(!state.practice);
 
-    $('#format').onchange = () => {
-      state.format = $('#format').value;
-      saveStore();
-      if (state.explainMode === 'predict') state.explainMode = 'step';
-      render();
-    };
-    document.querySelectorAll('.tab').forEach((t) => (t.onclick = () => showTab(t.dataset.tab)));
+    $$('input[name="format"]').forEach(
+      (r) =>
+        (r.onchange = () => {
+          state.format = r.value;
+          saveStore();
+          render();
+        }),
+    );
     $('#btn-assemble').onclick = assembleAndLoad;
-    $('#btn-load-bin').onclick = () => loadBinaryText($('#bin-src').value, 'bin');
-    $('#btn-from-mem').onclick = () => ($('#bin-src').value = VN.formatBinary(machine.mem));
     $('#examples').onchange = (e) => {
       loadExample(e.target.value);
       e.target.value = '';
     };
-    $('#file-input').onchange = (e) => {
-      if (e.target.files[0]) loadFile(e.target.files[0]);
-      e.target.value = '';
-    };
-    $('#btn-download').onclick = () => download('program.txt', VN.formatBinary(state.loadedWords) + '\n', 'text/plain');
     $('#btn-share').onclick = shareLink;
     $('#btn-csv').onclick = exportCsv;
     $('#trace-instr-only').onchange = renderTrace;
@@ -791,7 +681,6 @@
       saveTimer = setTimeout(saveStore, 400);
     };
     $('#asm-src').addEventListener('input', deferSave);
-    $('#bin-src').addEventListener('input', deferSave);
     $('#asm-src').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) assembleAndLoad();
       if (e.key === 'Tab' && !e.shiftKey) {
@@ -805,7 +694,7 @@
       render();
     });
     $('#input-values').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && state.lastRec && state.lastRec.blocked) {
+      if (e.key === 'Enter' && state.lastRec && state.lastRec.blocked && !state.practice) {
         doMicroStep();
         render();
       }
@@ -823,7 +712,7 @@
       else if (k === ' ') {
         e.preventDefault();
         $('#btn-run').click();
-      } else return;
+      }
     });
   }
 
@@ -833,14 +722,13 @@
     buildStatic();
     wire();
     const saved = loadStore();
-    if (saved.format) {
+    if (saved.format === 'dec' || saved.format === 'bin') {
       state.format = saved.format;
-      $('#format').value = saved.format;
+      $(`input[name="format"][value="${saved.format}"]`).checked = true;
     }
     if (loadFromHash()) return;
     if (saved.asm) {
       $('#asm-src').value = saved.asm;
-      $('#bin-src').value = saved.bin || '';
       $('#input-values').value = saved.input || '';
       if (assembleAndLoad()) return;
       render();

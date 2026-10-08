@@ -11,150 +11,143 @@ function machineFor(source, input = []) {
   assert.deepEqual(asm.errors, [], JSON.stringify(asm.errors));
   const m = new VN.Machine();
   m.load(asm.words);
-  m.setInput(input);
+  m.setInput(input.map((v) => v & 255));
   return m;
 }
+const op = (name) => VN.BY_NAME[name].opcode;
 
-test('encoding: opcode in the top 3 bits, address in the low 5 bits', () => {
-  assert.equal(VN.encode(0b001, 14), 0b00101110);
-  assert.equal(VN.opcodeOf(0b00101110), 0b001);
-  assert.equal(VN.operandOf(0b00101110), 14);
-  assert.equal(VN.disassemble(0b00101110), 'LDA 14');
-  assert.equal(VN.disassemble(0), 'HLT');
+test('machine size: 16 cells, 8-bit words, 4-bit op code and 4-bit address', () => {
+  assert.equal(VN.MEM_SIZE, 16);
+  assert.equal(VN.INSTRUCTIONS.length, 16);
+  VN.INSTRUCTIONS.forEach((ins, i) => assert.equal(ins.opcode, i));
+  assert.equal(VN.encode(op('ADD'), 5), 0b00110101);
+  assert.equal(VN.wordBin(0b00110101), '0011 0101');
+  assert.equal(VN.disassemble(0b00110101), 'ADD 5');
+  assert.equal(VN.disassemble(0b11110000), 'HALT');
+  assert.equal(VN.toSigned(0xff), -1);
 });
 
-test('parseNumber handles decimal, binary, hex and sign', () => {
+test('parseNumber accepts decimal and binary only', () => {
   assert.equal(VN.parseNumber('42'), 42);
   assert.equal(VN.parseNumber('-3'), -3);
   assert.equal(VN.parseNumber('0b101'), 5);
-  assert.equal(VN.parseNumber('0x2A'), 42);
-  assert.equal(VN.parseNumber('abc'), null);
+  assert.equal(VN.parseNumber('0x2A'), null);
 });
 
-test('assembler resolves labels, pseudo-instructions, DATA lists and label offsets', () => {
-  const asm = VN.assemble(`
-start:  LDA x   ; comment
-        ADD arr+2
-        OUT
-        IN
-        JMP start
-        HLT
-x:      DATA -1
-arr:    DATA 1, 2, 0b11
-`);
+test('assembler: textbook syntax with .BEGIN, labels, .DATA, -- comments and .END', () => {
+  const asm = VN.assemble(`.BEGIN
+AGAIN:  LOAD    ZERO   -- comment
+        JUMPLT  AGAIN
+        HALT
+ZERO:   .DATA   -1
+.END
+        LOAD 3  -- ignored after .END`);
   assert.deepEqual(asm.errors, []);
-  assert.equal(asm.words[0], VN.encode(1, 6)); // LDA x (x = 6)
-  assert.equal(asm.words[1], VN.encode(3, 9)); // ADD arr+2 (arr = 7)
-  assert.equal(asm.words[2], VN.encode(2, 31)); // OUT = STA 31
-  assert.equal(asm.words[3], VN.encode(1, 30)); // IN = LDA 30
-  assert.equal(asm.words[4], VN.encode(5, 0));
-  assert.equal(asm.words[6], 0xff); // -1 in two's complement
-  assert.deepEqual(asm.words.slice(7, 10), [1, 2, 3]);
+  assert.equal(asm.words[0], VN.encode(op('LOAD'), 3));
+  assert.equal(asm.words[1], VN.encode(op('JUMPLT'), 0));
+  assert.equal(asm.words[2], VN.encode(op('HALT'), 0));
+  assert.equal(asm.words[3], 0xff);
+  assert.equal(asm.listing.length, 4);
 });
 
 test('assembler reports useful errors with line numbers', () => {
-  const asm = VN.assemble('LDA nowhere\nFOO 3\nADD\nHLT 3\nx: DATA 300\nx: DATA 1\nLDA 40');
-  const lines = asm.errors.map((e) => e.line);
-  assert.deepEqual(lines, [1, 2, 3, 4, 5, 6, 7]);
+  const asm = VN.assemble('LOAD nowhere\nFOO 3\nADD\nHALT 3\nX: .DATA 300\nX: .DATA 1\nLOAD 16\nLOAD: .DATA 1');
+  assert.deepEqual(asm.errors.map((e) => e.line), [1, 2, 3, 4, 5, 6, 7, 8]);
   assert.match(asm.errors[0].message, /Unknown label/);
   assert.match(asm.errors[1].message, /Unknown instruction/);
 });
 
-test('assembler rejects programs that do not fit or overlap the I/O ports', () => {
-  const tooLong = Array.from({ length: 31 }, () => 'HLT').join('\n');
-  assert.ok(VN.assemble(tooLong).errors.some((e) => /I\/O ports/.test(e.message)));
-  assert.ok(VN.assemble('ORG 5\nHLT\nORG 5\nHLT').errors.some((e) => /already used/.test(e.message)));
+test('assembler rejects programs longer than 16 cells', () => {
+  const asm = VN.assemble(Array.from({ length: 17 }, () => 'HALT').join('\n'));
+  assert.equal(asm.errors.length, 1);
+  assert.match(asm.errors[0].message, /does not fit/);
 });
 
-test('binary loader accepts plain words, spaced words, address prefixes and comments', () => {
-  const r = VN.parseBinary(`
-; program
-001 01110
-00111: 00000101   # at address 7
-10: 11111111
-`);
-  assert.deepEqual(r.errors, []);
-  assert.equal(r.words[0], 0b00101110);
-  assert.equal(r.words[7], 5);
-  assert.equal(r.words[10], 255);
-  assert.equal(r.count, 3);
-  assert.equal(VN.parseBinary('0101').errors.length, 1);
-});
-
-test('formatBinary output can be loaded back unchanged', () => {
-  const asm = VN.assemble(EXAMPLES.find((e) => e.id === 'selfmod').source);
-  const text = VN.formatBinary(asm.words);
-  assert.deepEqual(VN.parseBinary(text).words, asm.words);
-});
-
-test('fetch is MAR<-PC, then MDR<-M[MAR] with PC+1, then IR<-MDR, then decode', () => {
-  const m = machineFor('LDA x\nHLT\nx: DATA 9');
-  const ops = [];
-  let r;
-  do {
-    r = m.microStep();
-    ops.push([r.phase, r.op]);
-  } while (!r.instructionDone);
-  assert.deepEqual(ops, [
-    ['FETCH', 'FETCH_MAR'],
-    ['FETCH', 'FETCH_READ'],
-    ['FETCH', 'FETCH_IR'],
-    ['DECODE', 'DECODE'],
-    ['EXECUTE', 'EXEC_MAR_IR'],
-    ['EXECUTE', 'EXEC_READ'],
-    ['EXECUTE', 'EXEC_AC_MDR'],
-  ]);
-  assert.deepEqual(m.registers(), { pc: 1, mar: 2, mdr: 9, ir: VN.encode(1, 2), ac: 9, z: false, n: false });
-});
-
-test('records list register changes and memory writes', () => {
-  const m = machineFor('STA 10\nHLT');
-  m.ac = 77;
+test('fetch is PC → MAR, fetch, MDR → IR, PC + 1 → PC, then decode', () => {
+  const m = machineFor('LOAD X\nHALT\nX: .DATA 9');
   const recs = m.stepInstruction();
-  assert.deepEqual(recs[1].changes.pc, [0, 1]);
-  const write = recs[recs.length - 1];
-  assert.equal(write.bus.control, 'WRITE');
-  assert.deepEqual(write.memWrites, [{ addr: 10, from: 0, to: 77 }]);
-  assert.equal(m.mem[10], 77);
+  assert.deepEqual(
+    recs.map((r) => `${r.phase} ${r.rtl}`),
+    [
+      'FETCH PC → MAR',
+      'FETCH CON(MAR) → MDR   (fetch)',
+      'FETCH MDR → IR',
+      'FETCH PC + 1 → PC',
+      'DECODE decode IR',
+      'EXECUTE IR(address) → MAR',
+      'EXECUTE CON(MAR) → MDR   (fetch)',
+      'EXECUTE MDR → R',
+    ],
+  );
+  assert.deepEqual(m.registers(), { pc: 1, mar: 2, mdr: 9, ir: VN.encode(op('LOAD'), 2), r: 9, gt: 0, eq: 0, lt: 0 });
 });
 
-test('ALU wraps around in 8 bits and sets Z and N', () => {
-  const m = machineFor('LDA a\nADD b\nSUB c\nHLT\na: DATA 250\nb: DATA 10\nc: DATA 5');
-  m.stepInstruction();
-  m.stepInstruction();
-  assert.equal(m.ac, 4); // 260 mod 256
-  m.stepInstruction();
-  assert.equal(m.ac, 255); // 4 - 5 = -1
-  assert.equal(m.n, true);
-  assert.equal(m.z, false);
+test('STORE, CLEAR, INCREMENT and DECREMENT change memory', () => {
+  const m = machineFor('LOAD A\nSTORE B\nCLEAR A\nINCREMENT B\nDECREMENT C\nHALT\nA: .DATA 5\nB: .DATA 0\nC: .DATA 0');
+  m.run();
+  assert.deepEqual([m.mem[6], m.mem[7], m.mem[8]], [0, 6, 255]);
+  assert.equal(m.r, 5); // INCREMENT/DECREMENT do not touch R
 });
 
-test('JZ and JN jump only when their flag is set', () => {
-  const m = machineFor('LDA zero\nJZ 5\nHLT\nHLT\nHLT\nLDA neg\nJN 9\nHLT\nHLT\nHLT\nzero: DATA 0\nneg: DATA -2');
+test('ADD and SUBTRACT work on R, with 8-bit wrap-around', () => {
+  const m = machineFor('LOAD A\nADD B\nSTORE A\nSUBTRACT C\nHALT\nA: .DATA 100\nB: .DATA 50\nC: .DATA 1');
   m.stepInstruction();
   m.stepInstruction();
-  assert.equal(m.pc, 5);
-  m.stepInstruction();
-  m.stepInstruction();
-  assert.equal(m.pc, 9);
-
-  const n = machineFor('LDA one\nJZ 5\nHLT\none: DATA 1');
-  n.stepInstruction();
-  n.stepInstruction();
-  assert.equal(n.pc, 2);
+  assert.equal(VN.toSigned(m.r), -106); // 150 does not fit: overflow
+  m.run();
+  assert.equal(VN.toSigned(m.r), -107);
 });
 
-test('reading the input port blocks when no input is left, and resumes when it is added', () => {
-  const m = machineFor('IN\nOUT\nHLT');
+test('COMPARE sets GT/EQ/LT by comparing CON(X) with R (signed)', () => {
+  const cases = [
+    [5, 3, [1, 0, 0]],
+    [3, 3, [0, 1, 0]],
+    [-2, 3, [0, 0, 1]],
+  ];
+  for (const [x, r, cc] of cases) {
+    const m = machineFor(`LOAD R\nCOMPARE X\nHALT\nR: .DATA ${r}\nX: .DATA ${x}`);
+    m.stepInstruction();
+    m.stepInstruction();
+    assert.deepEqual([m.gt, m.eq, m.lt], cc, `CON(X)=${x}, R=${r}`);
+  }
+});
+
+test('conditional jumps follow the condition codes', () => {
+  const run = (jump, x, r) => {
+    const m = machineFor(`LOAD R\nCOMPARE X\n${jump} 15\nHALT\nR: .DATA ${r}\nX: .DATA ${x}`);
+    m.stepInstruction();
+    m.stepInstruction();
+    m.stepInstruction();
+    return m.pc;
+  };
+  assert.equal(run('JUMPGT', 5, 3), 15);
+  assert.equal(run('JUMPGT', 3, 3), 3);
+  assert.equal(run('JUMPEQ', 3, 3), 15);
+  assert.equal(run('JUMPLT', 1, 3), 15);
+  assert.equal(run('JUMPNEQ', 3, 3), 3);
+  assert.equal(run('JUMPNEQ', 4, 3), 15);
+});
+
+test('IN waits for input, and resumes when input is added', () => {
+  const m = machineFor('IN X\nOUT X\nHALT\nX: .DATA 0');
   assert.equal(m.run().reason, 'input');
-  assert.equal(m.nextPhase, 'EXECUTE');
-  const pcBefore = m.pc;
-  const blocked = m.microStep();
-  assert.equal(blocked.blocked, 'input');
-  assert.equal(m.pc, pcBefore);
+  const pc = m.pc;
+  assert.equal(m.microStep().blocked, 'input');
+  assert.equal(m.pc, pc);
   m.setInput([33]);
   assert.equal(m.run().reason, 'halted');
   assert.deepEqual(m.output, [33]);
+  assert.equal(m.mem[3], 33);
+});
+
+test('records list register changes and memory writes', () => {
+  const m = machineFor('STORE 10\nHALT');
+  m.r = 77;
+  const recs = m.stepInstruction();
+  assert.deepEqual(recs[3].changes.pc, [0, 1]);
+  const store = recs[recs.length - 1];
+  assert.equal(store.bus.control, 'STORE');
+  assert.deepEqual(store.memWrites, [{ addr: 10, from: 0, to: 77 }]);
 });
 
 test('snapshot/restore allows stepping back', () => {
@@ -167,18 +160,22 @@ test('snapshot/restore allows stepping back', () => {
   assert.deepEqual(m.snapshot(), snap);
 });
 
-test('HLT stops the machine', () => {
-  const m = machineFor('HLT');
-  const recs = m.stepInstruction();
-  assert.equal(recs.at(-1).op, 'EXEC_HALT');
+test('run stops runaway programs', () => {
+  const m = machineFor('LOOP: JUMP LOOP');
+  assert.equal(m.run(50).reason, 'limit');
+});
+
+test('HALT stops the machine', () => {
+  const m = machineFor('HALT');
+  m.stepInstruction();
   assert.equal(m.halted, true);
   assert.equal(m.microStep(), null);
 });
 
 for (const ex of EXAMPLES) {
-  test(`example "${ex.title}" assembles and prints ${JSON.stringify(ex.expected)}`, () => {
+  test(`example "${ex.title}" fits in memory and prints ${JSON.stringify(ex.expected)}`, () => {
     const m = machineFor(ex.source, VN.parseValueList(ex.input).values);
     assert.equal(m.run().reason, 'halted');
-    assert.deepEqual(m.output, ex.expected);
+    assert.deepEqual(m.output.map(VN.toSigned), ex.expected);
   });
 }

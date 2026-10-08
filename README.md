@@ -1,101 +1,98 @@
 # Von Neumann Machine Simulator (CENG 111)
 
-A browser-based simulator for teaching the Von Neumann architecture: students load a program (assembly or raw
-binary), then step through the **fetch → decode → execute** cycle one clock step at a time. At each step they see
-which components (PC, IR, MAR, MDR, AC, ALU, control unit, memory, I/O) take part, what goes into and comes out of
-each one, and which buses carry which values.
+A browser-based simulator for the Von Neumann architecture, as taught in CENG 111. Students write a program in the
+course's assembly language, load it into memory, and step through the **fetch → decode → execute** cycle. At each
+step they see which components take part (PC, IR, MAR, MDR, R, ALU, condition codes, control unit, memory, I/O),
+what goes into and comes out of each one, and which buses carry which values.
 
-It is a **static website** (HTML + CSS + plain JavaScript, no build step, no server code, no external libraries),
-so it can be hosted for free and any number of students can use it at the same time.
-
-## Features
-
-- **Datapath diagram** that highlights the active components and animates the buses carrying data. Each bus shows
-  its value, and the control bus shows READ/WRITE.
-- **Step explanation** in plain language plus register-transfer notation (`MAR ← PC`, `MDR ← M[MAR]`, …), and an
-  **inputs/outputs table** for every component involved in the step.
-- **Micro-step**, **Instruction**, **Run** (6 speeds), **Back** (unlimited undo), **Reset**, and **breakpoints**
-  (click an address in the memory table).
-- **Two ways to load a program:** an assembler with labels, `DATA`, `ORG`, `IN`/`OUT`, and clear error messages
-  with line numbers, or a **binary loader** (one 8-bit word per line). Students can also open a `.txt` file or a
-  raw binary file.
-- **Editable memory:** each cell is shown as a number *and* as an instruction, to show that instructions and data
-  share one memory.
-- **Predict mode** for exam practice: before each instruction, students type what PC, IR, MAR, MDR and AC will hold
-  afterwards, then get checked and scored.
-- **Execution trace table** (one row per micro-step or per instruction) with changed values highlighted. It exports
-  to CSV, which is useful for preparing answer keys.
-- Number display in binary, unsigned decimal, signed decimal or hex.
-- **Share links** that encode the program in the URL, so a TA can post an exercise as a single link.
-- Works offline: open `index.html` directly from disk. Dark mode, keyboard shortcuts (`S`, `I`, `B`, `R`, `Space`).
+It is a **static website** (HTML, CSS and plain JavaScript, with no build step, no server code and no external
+libraries), so it can be hosted for free and any number of students can use it at the same time.
 
 ## The machine
 
+It follows the course textbook, Schneider & Gersting, *Invitation to Computer Science*.
+
 | | |
 |---|---|
-| Word size | 8 bits |
-| Memory | 32 cells (5-bit addresses); cells 30/31 are memory-mapped input/output ports |
-| Instruction format | `ooo aaaaa`: 3-bit opcode, 5-bit address |
-| Registers | PC, IR, MAR, MDR, AC, flags Z and N |
+| Memory | 16 cells, 8 bits each, with addresses 0–15 (4 bits). Instructions and data share the memory. |
+| Instruction format | `oooo aaaa`: a 4-bit op code and a 4-bit address field X |
+| Registers | PC, IR, MAR, MDR, R; condition codes GT, EQ, LT |
+| Numbers | 8-bit two's complement, −128 … 127 (results outside this range wrap around) |
 
-| Opcode | Instruction | Meaning | Execute micro-steps |
+| Op code | Instruction | Meaning | Execute steps |
 |---|---|---|---|
-| 000 | `HLT` | stop | halt |
-| 001 | `LDA a` | AC ← M[a] | MAR ← IR[addr]; MDR ← M[MAR]; AC ← MDR |
-| 010 | `STA a` | M[a] ← AC | MAR ← IR[addr]; MDR ← AC; M[MAR] ← MDR |
-| 011 | `ADD a` | AC ← AC + M[a] | MAR ← IR[addr]; MDR ← M[MAR]; AC ← AC + MDR |
-| 100 | `SUB a` | AC ← AC − M[a] | MAR ← IR[addr]; MDR ← M[MAR]; AC ← AC − MDR |
-| 101 | `JMP a` | PC ← a | PC ← IR[addr] |
-| 110 | `JZ a` | if AC = 0: PC ← a | if Z: PC ← IR[addr] |
-| 111 | `JN a` | if AC < 0: PC ← a | if N: PC ← IR[addr] |
+| 0000 | `LOAD X` | CON(X) → R | IR(address) → MAR; CON(MAR) → MDR; MDR → R |
+| 0001 | `STORE X` | R → CON(X) | IR(address) → MAR; R → MDR; MDR → CON(MAR) |
+| 0010 | `CLEAR X` | 0 → CON(X) | IR(address) → MAR; 0 → MDR; MDR → CON(MAR) |
+| 0011 | `ADD X` | R + CON(X) → R | IR(address) → MAR; CON(MAR) → MDR; R + MDR → R |
+| 0100 | `INCREMENT X` | CON(X) + 1 → CON(X) | IR(address) → MAR; CON(MAR) → MDR; MDR + 1 → MDR; MDR → CON(MAR) |
+| 0101 | `SUBTRACT X` | R − CON(X) → R | IR(address) → MAR; CON(MAR) → MDR; R − MDR → R |
+| 0110 | `DECREMENT X` | CON(X) − 1 → CON(X) | IR(address) → MAR; CON(MAR) → MDR; MDR − 1 → MDR; MDR → CON(MAR) |
+| 0111 | `COMPARE X` | sets GT/EQ/LT from CON(X) vs R | IR(address) → MAR; CON(MAR) → MDR; compare MDR with R |
+| 1000 | `JUMP X` | X → PC | IR(address) → PC |
+| 1001 | `JUMPGT X` | if GT = 1 then X → PC | if GT = 1 then IR(address) → PC |
+| 1010 | `JUMPEQ X` | if EQ = 1 then X → PC | if EQ = 1 then IR(address) → PC |
+| 1011 | `JUMPLT X` | if LT = 1 then X → PC | if LT = 1 then IR(address) → PC |
+| 1100 | `JUMPNEQ X` | if EQ = 0 then X → PC | if EQ = 0 then IR(address) → PC |
+| 1101 | `IN X` | input → CON(X) | IR(address) → MAR; input → MDR; MDR → CON(MAR) |
+| 1110 | `OUT X` | CON(X) → output | IR(address) → MAR; CON(MAR) → MDR; MDR → output |
+| 1111 | `HALT` | stop | stop |
 
-Fetch (same for every instruction): `MAR ← PC`, then `MDR ← M[MAR]` and `PC ← PC + 1`, then `IR ← MDR`.
-`IN` and `OUT` are assembler shorthands for `LDA 30` and `STA 31`.
+**Fetch** (the same for every instruction): `PC → MAR`, `CON(MAR) → MDR`, `MDR → IR`, `PC + 1 → PC`.
+After fetch comes **decode**: the instruction decoder reads the op code.
 
-> **Match the lecture notes before the Week 3 lecture.** This instruction set is a reasonable default, but the
-> exam should use exactly the machine taught in *Introduction to Computer Hardware and Systems* (Üçoluk & Kalkan).
-> All ISA details live in `js/core.js`: `INSTRUCTIONS` (opcodes), `EXEC_PLANS` (micro-steps per instruction) and
-> `MICRO_OPS` (what each micro-step does and how it is explained). Word and address sizes are constants at the top
-> of the file. After changing them, update the tests and example programs.
+**Assembly language** (the textbook's syntax):
+
+```
+.BEGIN
+AGAIN:  LOAD    ZERO      -- LABEL:  INSTRUCTION  X   -- comment
+        COMPARE N
+        JUMPLT  AGAIN
+        HALT
+ZERO:   .DATA   0
+N:      .DATA   -3
+.END
+```
+
+The whole instruction set is defined in `js/core.js`: `INSTRUCTIONS` (op codes and meanings), `EXEC_PLANS`
+(the execute steps of each instruction) and `MICRO_OPS` (what each step does and how it is explained).
+
+## Features
+
+- **Datapath diagram:** the active components light up, the buses carrying data are animated, and each bus shows
+  its value. The control bus shows the FETCH or STORE signal.
+- **An explanation of every step** in plain language, with the register-transfer notation and a table of what
+  each part gets (input) and gives (output).
+- **Stepping controls:** Next step, Next instruction, Run (four speeds), Undo and Reset.
+- **Memory editor:** every cell in binary, with its decimal value and its meaning as an instruction.
+- **Practice mode:** before each instruction, students predict PC, IR, MAR, MDR, R and the condition codes, then
+  check their answers, see the correct ones, and see the steps that happened.
+- **Execution trace:** one row per step or per instruction, exportable to CSV (useful for answer keys).
+- **Numbers in binary or decimal**, a choice made at the top of the page.
+- **Seven example programs**, including the slides' `a = b + c`, `A = B + C − 7` and "sum of non-negative
+  numbers" programs.
+- **Share links** that open a given program.
+- Works offline: open `index.html` directly from disk.
 
 ## Files
 
 ```
-ceng111_simulation/
-├── index.html        page layout and datapath diagram (SVG)
-├── css/style.css
-├── js/core.js        ISA, machine, assembler, binary loader (no DOM; unit-tested)
-├── js/examples.js    example programs (their expected outputs are checked by the tests)
-├── js/ui.js          rendering and interaction
-├── tests/core.test.js
-└── .github/workflows/pages.yml   runs the tests, deploys to GitHub Pages
+index.html            page layout and datapath diagram (SVG)
+css/style.css
+js/core.js            instruction set, machine, assembler (no DOM; unit-tested)
+js/examples.js        example programs (their outputs are checked by the tests)
+js/ui.js              rendering and interaction
+tests/core.test.js
+.github/workflows/pages.yml   runs the tests and deploys to GitHub Pages
 ```
 
 ## Run locally
 
-Open `index.html` in a browser. That's all.
-To serve it (for example, to test share links): `python3 -m http.server 8000` and open http://localhost:8000.
+Open `index.html` in a browser. To serve it instead: `python3 -m http.server 8000`, then open http://localhost:8000.
 
 Tests (Node ≥ 20, no dependencies): `node --test tests/*.test.js`
 
-## Hosting for free
+## Hosting
 
-Because the site is static, the server only sends about 100 KB of files once. After that, all simulation runs in
-the student's own browser, so 200 (or 2000) students at the same time put no real load on the server. No backend,
-database or scaling is needed.
-
-| Option | Cost | Notes |
-|---|---|---|
-| **GitHub Pages** (recommended) | free | `.github/workflows/pages.yml` runs the tests and deploys the site on every push to `main`. One-time setup: repo **Settings → Pages → Source: GitHub Actions**. URL: `https://<user>.github.io/ceng111_simulation/`. Putting the repo under a course GitHub organization means it outlives any one TA. |
-| Department web server | free | Copy `index.html`, `css/` and `js/` to the course page (`ceng.metu.edu.tr/ceng111/...`) or a personal `public_html`. This is the **safest option for the exam**: it is reachable even if the lab network blocks outside sites. |
-| Cloudflare Pages / Netlify | free tier | Connect the repo, leave the output directory as the repo root, no build command. |
-| Offline / exam machines | free | Copy the folder to the lab PCs and open `index.html`. It needs no internet. |
-
-## Ideas for next steps
-
-- Align the ISA and the diagram labels with the lecture notes (see the note above).
-- An **exam question generator**: random short programs with "fill in the register values after each step"
-  tables, with answer keys from the trace export.
-- A **Harvard architecture toggle** (separate instruction/data memories) for the Von Neumann vs Harvard comparison
-  in the syllabus.
-- A Turkish UI translation, if wanted.
+The workflow in `.github/workflows/pages.yml` runs the tests and publishes the site to GitHub Pages on every push
+to `main`. One-time setup: **Settings → Pages → Source: GitHub Actions**.
