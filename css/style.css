@@ -167,8 +167,8 @@ textarea { width: 100%; min-height: 400px; resize: vertical; padding: 8px; font-
 #diagram .phase-DECODE { fill: var(--decode); }
 #diagram .phase-EXECUTE { fill: var(--execute); }
 #diagram .phase-HALTED { fill: var(--bad); }
-#diagram .bus-val { font-family: var(--mono); font-size: 11.5px; font-weight: 800; fill: var(--text); paint-order: stroke; stroke: var(--active-soft); stroke-width: 4px; }
-#diagram .bus-name { font-size: 10px; fill: var(--muted); }
+#diagram .bus-val { font-family: var(--mono); font-size: 10.5px; font-weight: 800; fill: var(--text); paint-order: stroke; stroke: var(--active-soft); stroke-width: 4px; }
+#diagram .bus-name { font-size: 10.5px; font-weight: 600; fill: var(--muted); paint-order: stroke; stroke: var(--box-cpu); stroke-width: 3px; }
 
 .wire { fill: none; stroke: var(--wire); stroke-width: 2; }
 .wire.bus { stroke-width: 5; stroke-linecap: round; }
