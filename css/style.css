@@ -180,6 +180,8 @@ textarea { width: 100%; min-height: 400px; resize: vertical; padding: 8px; font-
 
 /* memory rows inside the diagram */
 #diagram .mhead { font-size: 10.5px; font-weight: 700; fill: var(--c-memory); }
+#diagram .mhead-sub { font-size: 8px; font-weight: 600; fill: var(--muted); text-anchor: middle; }
+.mem-table th .th-sub { font-weight: 600; color: var(--muted); font-size: 10.5px; white-space: nowrap; }
 .mrow rect { fill: transparent; }
 #diagram .mrow text { font-family: var(--mono); font-size: 11.5px; }
 #diagram .mrow .mnum, #diagram .mrow .mdis, #diagram .mrow .mdec { fill: var(--muted); }

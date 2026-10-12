@@ -341,7 +341,7 @@
   // ------------------------------------------------------------------------------------------------ rendering
 
   function buildStatic() {
-    // Memory rows inside the diagram: # | Address | Contents | Decimal | Instructions
+    // Memory rows inside the diagram: # | Address | Contents | Decimal | Instruction
     const g = $('#mem-rows');
     const ns = 'http://www.w3.org/2000/svg';
     for (let i = 0; i < VN.MEM_SIZE; i++) {
@@ -359,7 +359,7 @@
       g.appendChild(row);
     }
 
-    // Memory editor: # | Address | Contents | Decimal | Instructions
+    // Memory editor: # | Address | Contents | Decimal | Instruction
     const tbody = $('#mem-table tbody');
     for (let i = 0; i < VN.MEM_SIZE; i++) {
       const tr = document.createElement('tr');
