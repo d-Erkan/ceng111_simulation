@@ -39,6 +39,7 @@
     practiceView: null, // null | 'form' | 'result'
     practiceResult: null,
     practiceStats: { answered: 0, perfect: 0 },
+    demo: null, // { frames, i, paused, timer, restore } while the guided demo runs
   };
 
   // ------------------------------------------------------------------------------------------------ formatting
@@ -510,6 +511,10 @@
 
   function renderExplain(rec, waiting) {
     const box = $('#explain');
+    if (state.demo) {
+      renderDemo(box);
+      return;
+    }
     if (state.practice) {
       box.className = 'explain ph-PRACTICE';
       if (state.practiceView === 'result' && state.practiceResult) {
@@ -628,6 +633,140 @@
     loadProgram();
   }
 
+  // ------------------------------------------------------------------------------------------------ guided demo
+  // A short, self-running walkthrough on the real diagram: the "a = b + c" example, the first instruction step by
+  // step, then the other instructions one at a time. It starts by itself on the first visit; "Watch demo" replays it.
+  const DEMO_SEEN_KEY = 'ceng111-demo-seen';
+  const PHASE_WORD = { FETCH: 'Fetch', DECODE: 'Decode', EXECUTE: 'Execute' };
+
+  function demoFrames() {
+    const frames = [
+      {
+        ms: 7000,
+        title: 'Welcome! This is a tiny computer.',
+        text: 'On the left is the <b>CPU</b> (processor), on the right the <b>memory</b>. They are connected by <b>buses</b>, the thick lines that carry addresses and data. In this demo the computer runs a very small program while you watch.',
+      },
+      {
+        ms: 8000,
+        title: 'The program is already in memory',
+        text: 'The program computes <b>a = b + c</b> and prints a. Cells 0–4 hold the <b>instructions</b> (LOAD, ADD, STORE, OUT, HALT) and cells 5–7 hold the <b>numbers</b> a = 0, b = 5, c = 7. Instructions and numbers are stored in the same memory: this is the Von Neumann idea. Each instruction is done in three phases: <b>fetch</b>, <b>decode</b>, <b>execute</b>.',
+      },
+    ];
+    for (let k = 1; k <= 8; k++) frames.push({ ms: 6500, action: 'micro', firstInstr: true, k });
+    for (let n = 2; n <= 5; n++) frames.push({ ms: 6000, action: 'instr', n });
+    frames.push({
+      ms: 0,
+      tag: 'Finished',
+      title: 'Your turn!',
+      text: 'The machine printed <b>12</b> (5 + 7) and stopped at HALT. Now try it yourself: press <b>⟲ Reset</b>, then <b>Next step</b>, and read the explanation under the picture at every step. Parts that take part in a step light up in yellow. When you are ready, turn on <b>Practice mode</b> to test yourself.',
+    });
+    return frames;
+  }
+
+  function startDemo(auto) {
+    stopRun();
+    if (state.practice) setPractice(false);
+    const restore = auto ? null : { src: $('#asm-src').value, input: $('#input-values').value };
+    state.demo = { frames: demoFrames(), i: -1, paused: false, timer: null, restore };
+    document.body.classList.add('demo');
+    loadExample('add');
+    $('.machine').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    nextDemoFrame();
+  }
+
+  function nextDemoFrame() {
+    const d = state.demo;
+    if (!d) return;
+    clearTimeout(d.timer);
+    if (d.i >= d.frames.length - 1) return;
+    d.i += 1;
+    const f = d.frames[d.i];
+    if (f.action === 'micro') {
+      doMicroStep();
+      f.rec = state.lastRec;
+    } else if (f.action === 'instr') {
+      const recs = doInstruction();
+      f.recs = recs;
+    }
+    render();
+    scheduleDemo();
+  }
+
+  function scheduleDemo() {
+    const d = state.demo;
+    clearTimeout(d.timer);
+    const f = d.frames[d.i];
+    if (!d.paused && f.ms) d.timer = setTimeout(nextDemoFrame, f.ms);
+  }
+
+  function endDemo() {
+    const d = state.demo;
+    if (!d) return;
+    clearTimeout(d.timer);
+    state.demo = null;
+    document.body.classList.remove('demo');
+    try {
+      localStorage.setItem(DEMO_SEEN_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+    if (d.restore && d.restore.src) {
+      $('#asm-src').value = d.restore.src;
+      $('#input-values').value = d.restore.input;
+      loadProgram();
+    } else resetMachine();
+  }
+
+  function demoCaption(f) {
+    if (f.action === 'micro') {
+      const r = f.rec;
+      return {
+        tag: `First instruction · step ${f.k} of 8 · ${PHASE_WORD[r.phase]}`,
+        title: `<span class="demo-rtl">${esc(r.rtl.replace(/\s+\(.*\)$/, ''))}</span>`,
+        text: richText(r.text),
+      };
+    }
+    if (f.action === 'instr') {
+      const last = f.recs[f.recs.length - 1];
+      const name = VN.disassemble(machine.ir);
+      return {
+        tag: `Instruction ${f.n} of 5 · all its steps at once`,
+        title: `${esc(name)}`,
+        text: `Fetch brings <b>${esc(name)}</b> from memory into IR, decode finds out what it means, and execute does it. The last step: <span class="demo-rtl">${esc(last.rtl.replace(/\s+\(.*\)$/, ''))}</span><br>${richText(last.text)}`,
+      };
+    }
+    return { tag: f.tag || 'Introduction', title: f.title, text: f.text };
+  }
+
+  function renderDemo(box) {
+    const d = state.demo;
+    const f = d.frames[Math.max(0, d.i)];
+    const c = demoCaption(f);
+    const last = d.i >= d.frames.length - 1;
+    box.className = 'explain ph-DEMO';
+    box.dataset.view = 'demo';
+    box.innerHTML = `<div class="demo-card">
+      <div class="demo-top"><span class="demo-tag">▶ DEMO · ${esc(c.tag)}</span><span class="next">${d.i + 1} / ${d.frames.length}</span></div>
+      <h3>${c.title}</h3>
+      <p>${c.text}</p>
+      <div class="demo-progress"><span style="width:${Math.round(((d.i + 1) / d.frames.length) * 100)}%"></span></div>
+      <div class="btn-row">
+        ${last ? '<button id="demo-close" class="primary">Start working ▶</button>' : `<button id="demo-pause">${d.paused ? '▶ Continue' : '❚❚ Pause'}</button><button id="demo-next" class="primary">Next ▶</button><button id="demo-close">✕ Skip demo</button>`}
+      </div>
+    </div>`;
+    const on = (id, fn) => {
+      const b = box.querySelector(id);
+      if (b) b.onclick = fn;
+    };
+    on('#demo-close', endDemo);
+    on('#demo-next', nextDemoFrame);
+    on('#demo-pause', () => {
+      d.paused = !d.paused;
+      scheduleDemo();
+      render();
+    });
+  }
+
   // ------------------------------------------------------------------------------------------------ events
 
   function wire() {
@@ -654,6 +793,7 @@
     };
     $('#btn-practice').onclick = () => setPractice(!state.practice);
     $('#btn-theme').onclick = toggleTheme;
+    $('#btn-demo').onclick = () => startDemo(false);
 
     $$('input[name="format"]').forEach(
       (r) =>
@@ -698,6 +838,10 @@
     });
 
     document.addEventListener('keydown', (e) => {
+      if (state.demo) {
+        if (e.key === 'Escape') endDemo();
+        return;
+      }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target.closest('input, textarea, select, [contenteditable]')) return;
       if (e.target.closest('button') && (e.key === ' ' || e.key === 'Enter')) return; // native button activation
@@ -723,6 +867,16 @@
     if (saved.format === 'dec' || saved.format === 'bin') {
       state.format = saved.format;
       $(`input[name="format"][value="${saved.format}"]`).checked = true;
+    }
+    let seen = false;
+    try {
+      seen = localStorage.getItem(DEMO_SEEN_KEY) === '1';
+    } catch {
+      /* ignore */
+    }
+    if (!seen) {
+      startDemo(true); // first visit: show the guided demo before the student starts
+      return;
     }
     if (saved.asm) {
       $('#asm-src').value = saved.asm;

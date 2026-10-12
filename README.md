@@ -59,6 +59,11 @@ The whole instruction set is defined in `js/core.js`: `INSTRUCTIONS` (op codes a
 
 ## Features
 
+![Demo: the machine running a = b + c](docs/demo.gif)
+
+- **Guided demo:** on the first visit, a short demo runs the `a = b + c` example on the real diagram with an
+  explanation at every step (the first instruction step by step, then one instruction at a time). The
+  **▶ Watch demo** button replays it. `docs/demo.gif` is a recording of it, for announcements.
 - **Datapath diagram:** the active components light up, the buses carrying data are animated, and each bus shows
   its value. The control bus shows the FETCH or STORE signal.
 - **An explanation of every step** in plain language, with the register-transfer notation and a table of what
