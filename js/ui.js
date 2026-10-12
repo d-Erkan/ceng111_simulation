@@ -342,21 +342,22 @@
   // ------------------------------------------------------------------------------------------------ rendering
 
   function buildStatic() {
-    // Memory rows inside the diagram: # | Address | Contents | Decimal | Instruction
+    // Memory rows inside the diagram: # | Address | Contents (operation code | address field) | Decimal | Instruction
     const g = $('#mem-rows');
     const ns = 'http://www.w3.org/2000/svg';
     for (let i = 0; i < VN.MEM_SIZE; i++) {
-      const y = 57 + i * 22.6;
+      const y = 68 + i * 21.9;
       const row = document.createElementNS(ns, 'g');
       row.setAttribute('class', 'mrow');
       row.id = `m-${i}`;
-      row.innerHTML = `<rect x="650" y="${y}" width="330" height="21" rx="4"></rect>
+      row.innerHTML = `<rect x="650" y="${y}" width="420" height="20.5" rx="4"></rect>
         <text class="mnum" x="660" y="${y + 15}">${i}</text>
-        <text class="maddr" x="684" y="${y + 15}">${VN.toBin(i, VN.ADDR_BITS)}</text>
-        <text class="mval" x="752" y="${y + 15}"></text>
-        <text class="mdec" x="836" y="${y + 15}"></text>
-        <text class="mdis" x="896" y="${y + 15}"></text>
-        <text class="pc-mark" x="958" y="${y + 15}"></text>`;
+        <text class="maddr" x="680" y="${y + 15}">${VN.toBin(i, VN.ADDR_BITS)}</text>
+        <text class="mop" x="790" y="${y + 15}"></text>
+        <text class="mfld" x="870" y="${y + 15}"></text>
+        <text class="mdec" x="915" y="${y + 15}"></text>
+        <text class="mdis" x="972" y="${y + 15}"></text>
+        <text class="pc-mark" x="1046" y="${y + 15}"></text>`;
       g.appendChild(row);
     }
 
@@ -444,7 +445,9 @@
       const isPc = i === machine.pc && !machine.halted;
       const isAccess = bus.address === i;
       const row = $(`#m-${i}`);
-      row.querySelector('.mval').textContent = VN.wordBin(v);
+      const bits = VN.toBin(v, VN.WORD_BITS);
+      row.querySelector('.mop').textContent = bits.slice(0, VN.OPCODE_BITS);
+      row.querySelector('.mfld').textContent = bits.slice(VN.OPCODE_BITS);
       row.querySelector('.mdec').textContent = String(v);
       row.querySelector('.mdis').textContent = VN.disassemble(v);
       row.querySelector('.pc-mark').textContent = isPc ? '◀ PC' : '';

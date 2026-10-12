@@ -146,7 +146,7 @@ textarea { width: 100%; min-height: 400px; resize: vertical; padding: 8px; font-
 
 /* ---------- diagram ---------- */
 .diagram-wrap { width: 100%; overflow-x: auto; }
-#diagram { width: 100%; min-width: 560px; height: auto; display: block; }
+#diagram { width: 100%; min-width: 600px; height: auto; display: block; }
 #diagram text { fill: var(--text); font-size: 12px; }
 .box-cpu { fill: var(--box-cpu); stroke: var(--border); stroke-width: 1.5; }
 .box-mem { fill: var(--box-mem); stroke: var(--c-memory); stroke-width: 1.5; }
@@ -195,8 +195,15 @@ textarea { width: 100%; min-height: 400px; resize: vertical; padding: 8px; font-
 
 /* memory rows inside the diagram */
 #diagram .mhead { font-size: 10.5px; font-weight: 700; fill: var(--c-memory); }
-#diagram .mhead-sub { font-size: 8px; font-weight: 600; fill: var(--muted); text-anchor: middle; }
-.mem-table th .th-sub { font-weight: 600; color: var(--muted); font-size: 10.5px; white-space: nowrap; }
+#diagram .mhead.mid { text-anchor: middle; }
+#diagram .mhead.op, #diagram .mrow .mop { fill: var(--c-ctrl); }
+#diagram .mhead.fld, #diagram .mrow .mfld { fill: var(--c-memif); }
+#diagram .mrow .mop, #diagram .mrow .mfld { text-anchor: middle; font-weight: 700; }
+.mhead-line { stroke: var(--c-memory); stroke-width: 1; opacity: .6; }
+.mem-table th .th-sub .op { color: var(--c-ctrl); }
+.mem-table th .th-sub .fld { color: var(--c-memif); }
+.mem-table th .th-sub { font-weight: 600; font-size: 10.5px; display: block; line-height: 1.3; }
+.mem-table th .th-sub span { display: block; white-space: nowrap; }
 .mrow rect { fill: transparent; }
 #diagram .mrow text { font-family: var(--mono); font-size: 11.5px; }
 #diagram .mrow .mnum, #diagram .mrow .mdis, #diagram .mrow .mdec { fill: var(--muted); }
