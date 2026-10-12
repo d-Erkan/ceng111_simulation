@@ -88,28 +88,24 @@ ZERO:   .DATA   0
     },
     {
       id: 'sum',
-      title: '5. Sum of non-negative numbers (slides, Week 4)',
-      input: '5, 7, 3, -1',
+      title: '5. Sum of numbers until 0 is entered (slides, Week 4)',
+      input: '5, 7, 3, 0',
       expected: [15],
       source: `.BEGIN
-        CLEAR   SUM      -- Set the running sum to 0 (line 1).
-        IN      N        -- Input the first number N (line 2).
--- The next three instructions test whether N is a negative number (line 3).
+-- Read numbers one by one and add them up. When 0 is entered, print the sum and stop.
+-- (The slides stop at a negative number; this machine only has numbers 0..255, so it stops at 0.)
+        CLEAR   SUM      -- Set the running sum to 0.
+        IN      N        -- Input the first number N.
 AGAIN:  LOAD    ZERO     -- Put 0 into register R.
         COMPARE N        -- Compare N and 0.
-        JUMPLT  NEG      -- Go to NEG if N < 0.
--- We get here if N >= 0. We add N to the running sum (line 4).
+        JUMPEQ  DONE     -- Go to DONE if N = 0.
         LOAD    SUM      -- Put SUM into R.
         ADD     N        -- Add N. R now holds (N + SUM).
         STORE   SUM      -- Put the result back into SUM.
--- Get the next input value (line 5).
-        IN      N
--- Now go back and repeat the loop (line 6).
-        JUMP    AGAIN
--- We get to this section of the program only when we encounter a negative value.
-NEG:    OUT     SUM      -- Print the sum (line 7)
-        HALT             -- and stop (line 8).
--- Here are the data generation pseudo-ops
+        IN      N        -- Get the next input value.
+        JUMP    AGAIN    -- Go back and repeat the loop.
+DONE:   OUT     SUM      -- Print the sum
+        HALT             -- and stop.
 SUM:    .DATA   0        -- The running sum goes here.
 N:      .DATA   0        -- The input data are placed here.
 ZERO:   .DATA   0        -- The constant 0.

@@ -17,28 +17,28 @@ It follows the course textbook, Schneider & Gersting, *Invitation to Computer Sc
 | Memory | 16 cells, 8 bits each, with addresses 0–15 (4 bits). Instructions and data share the memory. |
 | Instruction format | `oooo aaaa`: a 4-bit op code and a 4-bit address field X |
 | Registers | PC, IR, MAR, MDR, R; condition codes GT, EQ, LT |
-| Numbers | 8-bit two's complement, −128 … 127 (results outside this range wrap around) |
+| Numbers | unsigned 8-bit binary numbers, 0 … 255 (a result that does not fit keeps only its last 8 bits: overflow) |
 
 | Op code | Instruction | Meaning | Execute steps |
 |---|---|---|---|
-| 0000 | `LOAD X` | CON(X) → R | IR(address) → MAR; CON(MAR) → MDR; MDR → R |
-| 0001 | `STORE X` | R → CON(X) | IR(address) → MAR; R → MDR; MDR → CON(MAR) |
-| 0010 | `CLEAR X` | 0 → CON(X) | IR(address) → MAR; 0 → MDR; MDR → CON(MAR) |
-| 0011 | `ADD X` | R + CON(X) → R | IR(address) → MAR; CON(MAR) → MDR; R + MDR → R |
-| 0100 | `INCREMENT X` | CON(X) + 1 → CON(X) | IR(address) → MAR; CON(MAR) → MDR; MDR + 1 → MDR; MDR → CON(MAR) |
-| 0101 | `SUBTRACT X` | R − CON(X) → R | IR(address) → MAR; CON(MAR) → MDR; R − MDR → R |
-| 0110 | `DECREMENT X` | CON(X) − 1 → CON(X) | IR(address) → MAR; CON(MAR) → MDR; MDR − 1 → MDR; MDR → CON(MAR) |
-| 0111 | `COMPARE X` | sets GT/EQ/LT from CON(X) vs R | IR(address) → MAR; CON(MAR) → MDR; compare MDR with R |
+| 0000 | `LOAD X` | content of X → R | IR(address) → MAR; content of cell MAR → MDR; MDR → R |
+| 0001 | `STORE X` | R → content of X | IR(address) → MAR; R → MDR; MDR → content of cell MAR |
+| 0010 | `CLEAR X` | 0 → content of X | IR(address) → MAR; 0 → MDR; MDR → content of cell MAR |
+| 0011 | `ADD X` | R + content of X → R | IR(address) → MAR; content of cell MAR → MDR; R + MDR → R |
+| 0100 | `INCREMENT X` | content of X + 1 → content of X | IR(address) → MAR; content of cell MAR → MDR; MDR + 1 → MDR; MDR → content of cell MAR |
+| 0101 | `SUBTRACT X` | R − content of X → R | IR(address) → MAR; content of cell MAR → MDR; R − MDR → R |
+| 0110 | `DECREMENT X` | content of X − 1 → content of X | IR(address) → MAR; content of cell MAR → MDR; MDR − 1 → MDR; MDR → content of cell MAR |
+| 0111 | `COMPARE X` | sets GT/EQ/LT from content of X vs R | IR(address) → MAR; content of cell MAR → MDR; compare MDR with R |
 | 1000 | `JUMP X` | X → PC | IR(address) → PC |
 | 1001 | `JUMPGT X` | if GT = 1 then X → PC | if GT = 1 then IR(address) → PC |
 | 1010 | `JUMPEQ X` | if EQ = 1 then X → PC | if EQ = 1 then IR(address) → PC |
 | 1011 | `JUMPLT X` | if LT = 1 then X → PC | if LT = 1 then IR(address) → PC |
 | 1100 | `JUMPNEQ X` | if EQ = 0 then X → PC | if EQ = 0 then IR(address) → PC |
-| 1101 | `IN X` | input → CON(X) | IR(address) → MAR; input → MDR; MDR → CON(MAR) |
-| 1110 | `OUT X` | CON(X) → output | IR(address) → MAR; CON(MAR) → MDR; MDR → output |
+| 1101 | `IN X` | input → content of X | IR(address) → MAR; input → MDR; MDR → content of cell MAR |
+| 1110 | `OUT X` | content of X → output | IR(address) → MAR; content of cell MAR → MDR; MDR → output |
 | 1111 | `HALT` | stop | stop |
 
-**Fetch** (the same for every instruction): `PC → MAR`, `CON(MAR) → MDR`, `MDR → IR`, `PC + 1 → PC`.
+**Fetch** (the same for every instruction): `PC → MAR`, `content of cell MAR → MDR`, `MDR → IR`, `PC + 1 → PC`.
 After fetch comes **decode**: the instruction decoder reads the op code.
 
 **Assembly language** (the textbook's syntax):
@@ -64,14 +64,15 @@ The whole instruction set is defined in `js/core.js`: `INSTRUCTIONS` (op codes a
 - **An explanation of every step** in plain language, with the register-transfer notation and a table of what
   each part gets (input) and gives (output).
 - **Stepping controls:** Next step, Next instruction, Run (four speeds), Undo and Reset.
+- **Automatic loading:** the program is put into memory as soon as it is typed or an example is chosen.
+- **Colour-coded parts** (control, memory interface, calculation, memory, I/O), explanations coloured by phase, and a light/dark switch.
 - **Memory editor:** every cell in binary, with its decimal value and its meaning as an instruction.
 - **Practice mode:** before each instruction, students predict PC, IR, MAR, MDR, R and the condition codes, then
   check their answers, see the correct ones, and see the steps that happened.
 - **Execution trace:** one row per step or per instruction, exportable to CSV (useful for answer keys).
 - **Numbers in binary or decimal**, a choice made at the top of the page.
-- **Seven example programs**, including the slides' `a = b + c`, `A = B + C − 7` and "sum of non-negative
-  numbers" programs.
-- **Share links** that open a given program.
+- **Seven example programs**, including the slides' `a = b + c`, `A = B + C − 7` and "sum of numbers"
+  programs (the sum stops at 0, because the machine has no negative numbers).
 - Works offline: open `index.html` directly from disk.
 
 ## Files

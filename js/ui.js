@@ -11,9 +11,11 @@
   const TRACE_LIMIT = 20000;
   const TRACE_VISIBLE = 300;
   const RUN_LIMIT = 1000; // instructions per Run, to stop endless loops
-  const STORE_KEY = 'ceng111-simulation:v2';
+  const STORE_KEY = 'ceng111-simulation:v3';
+  const THEME_KEY = 'ceng111-theme';
 
   const COMPONENTS = ['CU', 'PC', 'INC', 'IR', 'CC', 'MAR', 'MDR', 'R', 'ALU', 'IN', 'OUT'];
+  const PARTS = { CU: 'ctrl', PC: 'ctrl', IR: 'ctrl', CC: 'ctrl', INC: 'ctrl', MAR: 'memif', MDR: 'memif', ALU: 'data', R: 'data', MEM: 'memory', IN: 'io', OUT: 'io' };
   const COMPONENT_NAMES = { CU: 'Control unit', MEM: 'Memory', CC: 'Condition codes', INC: '+1 circuit', IN: 'Input device', OUT: 'Output device' };
   const PREDICT_FIELDS = [
     { key: 'pc', label: 'PC', kind: 'addr', hint: 'address of the next instruction' },
@@ -41,7 +43,7 @@
 
   // ------------------------------------------------------------------------------------------------ formatting
 
-  const fmtWord = (v) => (state.format === 'dec' ? String(VN.toSigned(v)) : VN.wordBin(v));
+  const fmtWord = (v) => (state.format === 'dec' ? String(v) : VN.wordBin(v));
   const fmtAddr = (v) => (state.format === 'dec' ? String(v) : VN.toBin(v, VN.ADDR_BITS));
   function fmt(value, kind) {
     if (kind === 'word') return fmtWord(value);
@@ -51,13 +53,14 @@
   }
   function allForms(v, kind) {
     if (kind === 'addr') return `binary ${VN.toBin(v, VN.ADDR_BITS)} · decimal ${v}`;
-    return `binary ${VN.wordBin(v)} · decimal ${VN.toSigned(v)} · as instruction: ${VN.disassemble(v)}`;
+    return `binary ${VN.wordBin(v)} · decimal ${v} · as instruction: ${VN.disassemble(v)}`;
   }
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   }
   const valSpan = (v, kind) => `<span class="v" title="${esc(allForms(v, kind))}">${esc(fmt(v, kind))}</span>`;
   const richText = (text) => esc(text).replace(/\{([wa]):(\d+)\}/g, (_, k, n) => valSpan(Number(n), k === 'w' ? 'word' : 'addr'));
+  const partDot = (c) => (PARTS[c] ? `<span class="dot part-${PARTS[c]}"></span>` : '');
 
   /** Parses a value typed by a student: binary digits in binary mode, a whole number in decimal mode, or 0b…. */
   function parseUserValue(text, kind, format = state.format) {
@@ -66,11 +69,10 @@
     let v = null;
     if (/^0b[01]+$/i.test(t)) v = parseInt(t.slice(2), 2);
     else if (format === 'bin') v = /^[01]+$/.test(t) ? parseInt(t, 2) : null;
-    else v = /^[+-]?\d+$/.test(t) ? parseInt(t, 10) : null;
+    else v = /^\d+$/.test(t) ? parseInt(t, 10) : null;
     if (v === null) return null;
-    if (kind === 'addr') return v >= 0 && v <= VN.ADDR_MASK ? v : null;
-    if (format === 'bin' && !/^-/.test(t)) return v <= VN.WORD_MASK ? v : null;
-    return v >= VN.MIN_VALUE && v <= VN.MAX_VALUE ? v & VN.WORD_MASK : null;
+    const max = kind === 'addr' ? VN.ADDR_MASK : VN.WORD_MASK;
+    return v <= max ? v : null;
   }
 
   // ------------------------------------------------------------------------------------------------ persistence
@@ -89,16 +91,6 @@
       /* storage unavailable (private mode): ignore */
     }
   }
-  function b64encode(str) {
-    let bin = '';
-    new TextEncoder().encode(str).forEach((b) => (bin += String.fromCharCode(b)));
-    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
-  function b64decode(s) {
-    s = s.replace(/-/g, '+').replace(/_/g, '/');
-    while (s.length % 4) s += '=';
-    return new TextDecoder().decode(Uint8Array.from(atob(s), (c) => c.charCodeAt(0)));
-  }
 
   function toast(msg) {
     const t = $('#toast');
@@ -112,18 +104,40 @@
     el.className = 'msg' + (kind ? ' ' + kind : '');
   }
 
+  // ------------------------------------------------------------------------------------------------ theme
+
+  function currentTheme() {
+    const t = document.documentElement.dataset.theme;
+    if (t) return t;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function showThemeButton() {
+    $('#btn-theme').textContent = currentTheme() === 'dark' ? '☀️ Light' : '🌙 Dark';
+  }
+  function toggleTheme() {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {
+      /* ignore */
+    }
+    showThemeButton();
+  }
+
   // ------------------------------------------------------------------------------------------------ program loading
 
-  function assembleAndLoad() {
+  /** Translates the program into bits and puts it into memory (happens automatically while typing). */
+  function loadProgram() {
     const asm = VN.assemble($('#asm-src').value);
     if (asm.errors.length) {
-      setMsg($('#asm-msg'), asm.errors.map((e) => `Line ${e.line}: ${e.message}`).join('\n'), 'error');
+      setMsg($('#asm-msg'), `The program has a mistake, so the memory was not changed:\n${asm.errors.map((e) => `Line ${e.line}: ${e.message}`).join('\n')}`, 'error');
       return false;
     }
     state.loadedWords = asm.words.slice();
     resetMachine();
     const last = asm.listing.length ? asm.listing[asm.listing.length - 1].addr : 0;
-    setMsg($('#asm-msg'), `Done: ${asm.listing.length} memory cells used (cells 0–${last}). Now press "Next step".`, 'ok');
+    setMsg($('#asm-msg'), `✓ The program is in memory (cells 0–${last}). Press "Next step" to start.`, 'ok');
     saveStore();
     return true;
   }
@@ -235,7 +249,7 @@
   function practiceFormHtml() {
     if (machine.halted) {
       return `<div class="practice"><h3>The program has finished (HALT).</h3>
-        <p>${scoreText()}</p><p>Press <b>⟲ Reset</b> to practice the same program again, or choose another example.</p></div>`;
+        <p>${scoreText()}</p><p>Press <b>⟲ Reset</b> to practise the same program again, or choose another example.</p></div>`;
     }
     const cur = machine.registers();
     const ph = (kind) => (state.format === 'dec' ? 'e.g. 5' : kind === 'addr' ? 'e.g. 0101' : 'e.g. 0011 0101');
@@ -246,14 +260,14 @@
     return `<div class="practice">
       <h3>🎯 Predict the next instruction</h3>
       <ol class="practice-steps">
-        <li>PC is ${valSpan(machine.pc, 'addr')}, so the next instruction is in <b>memory cell ${machine.pc}</b>. Find it in the Memory editor.</li>
+        <li>PC is ${valSpan(machine.pc, 'addr')}, so the next instruction is in <b>memory cell ${machine.pc}</b>. Find it in the memory.</li>
         <li>Decode it: the first 4 bits are the <b>op code</b> (see the instruction table at the bottom of the page), and the last 4 bits are the <b>address X</b>.</li>
         <li>On paper, go through <b>fetch, decode and execute</b>.</li>
         <li>Write what each register will hold <b>after the whole instruction is finished</b>.</li>
       </ol>
       <p class="now">Registers now: PC ${valSpan(cur.pc, 'addr')} · IR ${valSpan(cur.ir, 'word')} · MAR ${valSpan(cur.mar, 'addr')} · MDR ${valSpan(cur.mdr, 'word')} · R ${valSpan(cur.r, 'word')} · GT ${cur.gt} EQ ${cur.eq} LT ${cur.lt}</p>
       <div class="predict-grid">${fields}<div class="cc-group">${['gt', 'eq', 'lt'].map(ccSelect).join('')}<small>condition codes</small></div></div>
-      <p class="hint">Type ${state.format === 'dec' ? 'decimal numbers (−128 … 127)' : 'binary digits (4 for an address, 8 for a value; spaces are allowed)'}. You can change this with "Show numbers in" at the top.</p>
+      <p class="hint">Type ${state.format === 'dec' ? 'decimal numbers (0 … 255)' : 'binary digits (4 for an address, 8 for a value; spaces are allowed)'}. You can change this with "Show numbers in" at the top.</p>
       <div class="btn-row">
         <button id="btn-check" class="primary">Check my answers</button>
         <button id="btn-reveal">Show me the answer</button>
@@ -307,8 +321,7 @@
       })
       .join('');
     const steps = recs.map((r) => `<li><span class="badge ${r.phase}">${r.phase}</span> <code>${esc(r.rtl)}</code></li>`).join('');
-    const ins = recs.find((r) => r.op === 'DECODE');
-    const name = ins ? VN.disassemble(machine.ir) : '';
+    const name = recs.some((r) => r.op === 'DECODE') ? VN.disassemble(machine.ir) : '';
     const title = reveal ? 'Here is the answer.' : all ? '✅ All correct, well done!' : '❌ Some answers are wrong. Compare them with the correct values below.';
     return `<div class="practice">
       <h3>${title}</h3>
@@ -321,34 +334,37 @@
         ${machine.halted ? '' : '<button id="btn-next-predict" class="primary">Predict the next instruction ▶</button>'}
         <span class="score">${scoreText()}</span>
       </div>
-      ${machine.halted ? '<p><b>The program has finished.</b> Press ⟲ Reset to practice again.</p>' : ''}
+      ${machine.halted ? '<p><b>The program has finished.</b> Press ⟲ Reset to practise again.</p>' : ''}
     </div>`;
   }
 
   // ------------------------------------------------------------------------------------------------ rendering
 
   function buildStatic() {
-    // Memory rows inside the SVG.
+    // Memory rows inside the diagram: # | Address | Contents | Decimal | As instruction
     const g = $('#mem-rows');
     const ns = 'http://www.w3.org/2000/svg';
     for (let i = 0; i < VN.MEM_SIZE; i++) {
-      const y = 40 + i * 19.5;
+      const y = 57 + i * 22.6;
       const row = document.createElementNS(ns, 'g');
       row.setAttribute('class', 'mrow');
       row.id = `m-${i}`;
-      row.innerHTML = `<rect x="638" y="${y}" width="204" height="18" rx="3"></rect>
-        <text class="maddr" x="644" y="${y + 13}">${VN.toBin(i, VN.ADDR_BITS)}</text>
-        <text class="mval" x="682" y="${y + 13}"></text>
-        <text class="mdis" x="752" y="${y + 13}"></text>`;
+      row.innerHTML = `<rect x="650" y="${y}" width="330" height="21" rx="4"></rect>
+        <text class="mnum" x="660" y="${y + 15}">${i}</text>
+        <text class="maddr" x="684" y="${y + 15}">${VN.toBin(i, VN.ADDR_BITS)}</text>
+        <text class="mval" x="752" y="${y + 15}"></text>
+        <text class="mdec" x="836" y="${y + 15}"></text>
+        <text class="mdis" x="896" y="${y + 15}"></text>
+        <text class="pc-mark" x="958" y="${y + 15}"></text>`;
       g.appendChild(row);
     }
 
-    // Memory editor.
+    // Memory editor: # | Address | Contents | Decimal | As instruction
     const tbody = $('#mem-table tbody');
     for (let i = 0; i < VN.MEM_SIZE; i++) {
       const tr = document.createElement('tr');
       tr.id = `mt-${i}`;
-      tr.innerHTML = `<td class="addr">${VN.toBin(i, VN.ADDR_BITS)} <small>(${i})</small></td>
+      tr.innerHTML = `<td class="rownum">${i}</td><td class="addr">${VN.toBin(i, VN.ADDR_BITS)}</td>
         <td><input type="text" maxlength="9" aria-label="Contents of cell ${i}, 8 binary digits" spellcheck="false"></td>
         <td class="num"></td><td class="dis"></td>`;
       const inp = tr.querySelector('input');
@@ -398,15 +414,14 @@
       el.textContent = String(machine[k]);
       el.classList.toggle('changed', k in changes);
     }
-    $('#v-ALU').textContent = rec && rec.alu ? `selected: ${rec.alu}` : '';
+    $('#v-ALU').textContent = rec && rec.alu ? `operation: ${rec.alu}` : '';
 
     // Control unit.
     const phase = machine.halted ? 'HALTED' : rec ? rec.phase : 'READY';
     const cuPhase = $('#cu-phase');
-    cuPhase.textContent = waiting ? 'Waiting for input' : phase === 'READY' ? 'Ready' : phase === 'HALTED' ? 'Halted' : `Phase: ${phase}`;
+    cuPhase.textContent = waiting ? 'Waiting for input' : phase === 'READY' ? 'Ready to start' : phase === 'HALTED' ? 'Halted' : `Phase: ${phase}`;
     cuPhase.setAttribute('class', `cu-line strong phase-${waiting ? 'HALTED' : phase}`);
-    const d = machine.decoded;
-    $('#cu-instr').textContent = d ? `Instruction: ${VN.disassemble(machine.ir)}` : 'Instruction: (not decoded yet)';
+    $('#cu-instr').textContent = machine.decoded ? `Instruction: ${VN.disassemble(machine.ir)}` : 'Instruction: (not decoded yet)';
     $('#cu-rtl').textContent = rec ? rec.rtl : '';
     $('#cu-clock').textContent = `step ${machine.stepCount} · instructions done ${machine.instructionCount}`;
 
@@ -421,7 +436,7 @@
     $('#t-bus-data').textContent = bus.data !== undefined ? fmtWord(bus.data) : '';
     $('#t-bus-ctrl').textContent = bus.control || '';
 
-    // Memory (diagram + editor). Contents are always shown in binary.
+    // Memory (diagram + editor). Addresses and contents are always shown in binary, with the decimal value beside.
     const written = new Set(((rec && rec.memWrites) || []).map((w) => w.addr));
     for (let i = 0; i < VN.MEM_SIZE; i++) {
       const v = machine.mem[i];
@@ -429,34 +444,33 @@
       const isAccess = bus.address === i;
       const row = $(`#m-${i}`);
       row.querySelector('.mval').textContent = VN.wordBin(v);
+      row.querySelector('.mdec').textContent = String(v);
       row.querySelector('.mdis').textContent = VN.disassemble(v);
+      row.querySelector('.pc-mark').textContent = isPc ? '◀ PC' : '';
       row.setAttribute('class', `mrow${isPc ? ' pc' : ''}${isAccess ? ' access' : ''}${written.has(i) ? ' written' : ''}`);
       setTitle(row, `cell ${i}: ${allForms(v, 'word')}`);
 
       const tr = $(`#mt-${i}`);
       tr.classList.toggle('pc', isPc);
       tr.classList.toggle('access', isAccess);
-      tr.classList.toggle('written', written.has(i));
       const inp = tr.querySelector('input');
       if (document.activeElement !== inp) {
         inp.value = VN.wordBin(v);
         inp.classList.remove('invalid');
       }
-      tr.querySelector('.num').textContent = String(VN.toSigned(v));
-      tr.querySelector('.dis').innerHTML = `${esc(VN.disassemble(v))}${isPc ? ' <span class="pc-tag">◀PC</span>' : ''}`;
+      tr.querySelector('.num').textContent = String(v);
+      tr.querySelector('.dis').innerHTML = `${esc(VN.disassemble(v))}${isPc ? ' <span class="pc-tag">◀ PC</span>' : ''}`;
     }
 
     // I/O.
     const nextIn = machine.input[machine.inputPos];
-    $('#v-IN').textContent = nextIn === undefined ? '(empty)' : `next: ${VN.toSigned(nextIn)}`;
+    $('#v-IN').textContent = nextIn === undefined ? 'next value: (none)' : `next value: ${nextIn}`;
     const lastOut = machine.output[machine.output.length - 1];
-    $('#v-OUT').textContent = lastOut === undefined ? '—' : String(VN.toSigned(lastOut));
+    $('#v-OUT').textContent = lastOut === undefined ? 'printed: —' : `printed: ${machine.output.slice(-4).join(', ')}`;
     $('#input-chips').innerHTML = machine.input.length
-      ? machine.input.map((v, i) => `<span class="chip${i < machine.inputPos ? ' used' : i === machine.inputPos ? ' next' : ''}">${VN.toSigned(v)}</span>`).join('')
+      ? machine.input.map((v, i) => `<span class="chip${i < machine.inputPos ? ' used' : i === machine.inputPos ? ' next' : ''}">${v}</span>`).join('')
       : '<span class="empty">no input values</span>';
-    $('#output-list').innerHTML = machine.output.length
-      ? machine.output.map((v) => `<span class="chip">${VN.toSigned(v)}</span>`).join('')
-      : '<span class="empty">nothing printed yet</span>';
+    $('#output-list').innerHTML = machine.output.length ? machine.output.map((v) => `<span class="chip">${v}</span>`).join('') : '<span class="empty">nothing printed yet</span>';
     $('#input-values').closest('.field').classList.toggle('attention', waiting);
 
     renderStatus(waiting);
@@ -497,8 +511,10 @@
   function renderExplain(rec, waiting) {
     const box = $('#explain');
     if (state.practice) {
+      box.className = 'explain ph-PRACTICE';
       if (state.practiceView === 'result' && state.practiceResult) {
         box.innerHTML = practiceResultHtml();
+        box.dataset.view = 'result';
         const nb = $('#btn-next-predict');
         if (nb)
           nb.onclick = () => {
@@ -522,21 +538,26 @@
 
     let html;
     if (waiting) {
+      box.className = 'explain ph-WAIT';
       html = `<div class="head"><span class="badge WAIT">WAITING FOR INPUT</span><span class="rtl">${esc(state.lastRec.rtl)}</span></div>
         <p>${richText(state.lastRec.text)}</p>`;
     } else if (!rec) {
+      box.className = 'explain';
       html = `<div class="head"><span class="badge READY">READY</span></div>
-        <p>The program is in memory, and all registers are 0. Because PC = 0, the first instruction will be fetched from memory cell 0.</p>
-        <p>Press <b>Next step</b> to run one step of the instruction cycle and see which parts of the computer take part.
-        Press <b>Next instruction</b> to run all steps of one instruction (fetch, decode and execute).</p>
+        <p>The program is in memory and all registers are 0. Because PC = 0, the first instruction will be taken from memory cell 0.</p>
+        <p>Every instruction is done in three phases: <b style="color:var(--fetch)">fetch</b> (bring the instruction from memory),
+        <b style="color:var(--decode)">decode</b> (find out what it means) and <b style="color:var(--execute)">execute</b> (do it).</p>
+        <p>Press <b>Next step</b> to do one step and see which parts of the computer take part (they light up in yellow),
+        or <b>Next instruction</b> to do all steps of one instruction.</p>
         <p class="next">${esc(nextStepText())}</p>`;
     } else {
+      box.className = `explain ph-${rec.phase}`;
       const ports = (list) =>
         list.length
           ? list.map((p) => `<span class="port"><span>${esc(p.label)}:</span> ${p.kind === 'text' || p.kind === 'bit' ? `<b>${esc(p.value)}</b>` : valSpan(p.value, p.kind)}</span>`).join('')
           : '<span class="port"><span>—</span></span>';
       const ioRows = (rec.ioTable || [])
-        .map((row) => `<tr><td>${esc(COMPONENT_NAMES[row.component] || row.component)}</td><td>${ports(row.inputs)}</td><td>${ports(row.outputs)}</td></tr>`)
+        .map((row) => `<tr><td>${partDot(row.component)}${esc(COMPONENT_NAMES[row.component] || row.component)}</td><td>${ports(row.inputs)}</td><td>${ports(row.outputs)}</td></tr>`)
         .join('');
       html = `<div class="head"><span class="badge ${rec.phase}">${rec.phase}</span><span class="rtl">${esc(rec.rtl)}</span>
           <span class="next">step ${rec.step}${rec.instructionDone ? ' · instruction finished' : ''}</span></div>
@@ -552,9 +573,9 @@
     const g = r.registers;
     const chg = r.changes;
     const cell = (key, kind) => ({ text: fmt(g[key], kind), chg: key in chg });
-    let extra = r.memWrites.map((w) => `CON(${fmtAddr(w.addr)}) = ${fmtWord(w.to)}`).join(', ');
-    if (r.io === 'IN') extra = `input ${VN.toSigned(r.registers.mdr)}`;
-    if (r.io === 'OUT') extra = `output ${VN.toSigned(r.registers.mdr)}`;
+    let extra = r.memWrites.map((w) => `cell ${fmtAddr(w.addr)} = ${fmtWord(w.to)}`).join(', ');
+    if (r.io === 'IN') extra = `input ${r.registers.mdr}`;
+    if (r.io === 'OUT') extra = `output ${r.registers.mdr}`;
     return [
       { text: String(r.step) },
       { text: String(t.instrNo) },
@@ -604,32 +625,7 @@
     if (!ex) return;
     $('#asm-src').value = ex.source;
     $('#input-values').value = ex.input;
-    assembleAndLoad();
-  }
-
-  function shareLink() {
-    const params = new URLSearchParams();
-    params.set('src', b64encode($('#asm-src').value));
-    if ($('#input-values').value.trim()) params.set('in', $('#input-values').value.trim());
-    const url = `${location.href.split('#')[0]}#${params}`;
-    const done = () => toast('Link copied. Anyone who opens it gets this program.');
-    if (navigator.clipboard) navigator.clipboard.writeText(url).then(done, () => prompt('Copy this link:', url));
-    else prompt('Copy this link:', url);
-  }
-
-  function loadFromHash() {
-    if (!location.hash || location.hash.length < 2) return false;
-    try {
-      const p = new URLSearchParams(location.hash.slice(1));
-      if (p.has('in')) $('#input-values').value = p.get('in');
-      if (p.has('src')) {
-        $('#asm-src').value = b64decode(p.get('src'));
-        return assembleAndLoad();
-      }
-    } catch {
-      toast('The link could not be read; loading the default program.');
-    }
-    return false;
+    loadProgram();
   }
 
   // ------------------------------------------------------------------------------------------------ events
@@ -657,6 +653,7 @@
       } else startRun();
     };
     $('#btn-practice').onclick = () => setPractice(!state.practice);
+    $('#btn-theme').onclick = toggleTheme;
 
     $$('input[name="format"]').forEach(
       (r) =>
@@ -666,31 +663,31 @@
           render();
         }),
     );
-    $('#btn-assemble').onclick = assembleAndLoad;
     $('#examples').onchange = (e) => {
       loadExample(e.target.value);
       e.target.value = '';
     };
-    $('#btn-share').onclick = shareLink;
     $('#btn-csv').onclick = exportCsv;
     $('#trace-instr-only').onchange = renderTrace;
 
-    let saveTimer;
-    const deferSave = () => {
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(saveStore, 400);
-    };
-    $('#asm-src').addEventListener('input', deferSave);
+    // The program is put into memory automatically, shortly after the user stops typing.
+    let loadTimer;
+    $('#asm-src').addEventListener('input', () => {
+      clearTimeout(loadTimer);
+      setMsg($('#asm-msg'), 'Typing…', '');
+      loadTimer = setTimeout(loadProgram, 600);
+    });
     $('#asm-src').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) assembleAndLoad();
       if (e.key === 'Tab' && !e.shiftKey) {
         e.preventDefault();
         document.execCommand('insertText', false, '\t');
       }
     });
+    let saveTimer;
     $('#input-values').addEventListener('input', () => {
       applyInputField();
-      deferSave();
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveStore, 400);
       render();
     });
     $('#input-values').addEventListener('keydown', (e) => {
@@ -721,16 +718,16 @@
   function init() {
     buildStatic();
     wire();
+    showThemeButton();
     const saved = loadStore();
     if (saved.format === 'dec' || saved.format === 'bin') {
       state.format = saved.format;
       $(`input[name="format"][value="${saved.format}"]`).checked = true;
     }
-    if (loadFromHash()) return;
     if (saved.asm) {
       $('#asm-src').value = saved.asm;
       $('#input-values').value = saved.input || '';
-      if (assembleAndLoad()) return;
+      if (loadProgram()) return;
       render();
       return;
     }

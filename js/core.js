@@ -9,7 +9,7 @@
  *   - instruction word = 4-bit op code + 4-bit address field:   oooo aaaa
  *   - one register R, condition codes GT / EQ / LT (set by COMPARE)
  *   - registers PC, IR, MAR, MDR
- *   - numbers are 8-bit two's complement (−128 … 127)
+ *   - numbers are unsigned 8-bit binary numbers (0 … 255)
  *
  * To change the instruction set, edit INSTRUCTIONS and EXEC_PLANS below.
  */
@@ -26,32 +26,31 @@
   const MEM_SIZE = 1 << ADDR_BITS; // 16 cells
   const WORD_MASK = (1 << WORD_BITS) - 1;
   const ADDR_MASK = MEM_SIZE - 1;
-  const SIGN_BIT = 1 << (WORD_BITS - 1);
-  const MIN_VALUE = -(1 << (WORD_BITS - 1)); // -128
-  const MAX_VALUE = (1 << (WORD_BITS - 1)) - 1; // 127
+  const MIN_VALUE = 0;
+  const MAX_VALUE = WORD_MASK; // 255
 
   // Op codes and meanings as in the textbook's instruction set.
   const INSTRUCTIONS = [
-    { opcode: 0, name: 'LOAD', meaning: 'CON(X) → R', summary: 'Load register R with the contents of memory cell X.' },
-    { opcode: 1, name: 'STORE', meaning: 'R → CON(X)', summary: 'Store register R into memory cell X.' },
-    { opcode: 2, name: 'CLEAR', meaning: '0 → CON(X)', summary: 'Set memory cell X to 0.' },
-    { opcode: 3, name: 'ADD', meaning: 'R + CON(X) → R', summary: 'Add the contents of memory cell X to R.' },
-    { opcode: 4, name: 'INCREMENT', meaning: 'CON(X) + 1 → CON(X)', summary: 'Add 1 to memory cell X.' },
-    { opcode: 5, name: 'SUBTRACT', meaning: 'R − CON(X) → R', summary: 'Subtract the contents of memory cell X from R.' },
-    { opcode: 6, name: 'DECREMENT', meaning: 'CON(X) − 1 → CON(X)', summary: 'Subtract 1 from memory cell X.' },
+    { opcode: 0, name: 'LOAD', meaning: 'content of X → R', summary: 'Load register R with the content of memory cell X.' },
+    { opcode: 1, name: 'STORE', meaning: 'R → content of X', summary: 'Store register R into memory cell X.' },
+    { opcode: 2, name: 'CLEAR', meaning: '0 → content of X', summary: 'Set memory cell X to 0.' },
+    { opcode: 3, name: 'ADD', meaning: 'R + content of X → R', summary: 'Add the content of memory cell X to R.' },
+    { opcode: 4, name: 'INCREMENT', meaning: 'content of X + 1 → content of X', summary: 'Add 1 to memory cell X.' },
+    { opcode: 5, name: 'SUBTRACT', meaning: 'R − content of X → R', summary: 'Subtract the content of memory cell X from R.' },
+    { opcode: 6, name: 'DECREMENT', meaning: 'content of X − 1 → content of X', summary: 'Subtract 1 from memory cell X.' },
     {
       opcode: 7,
       name: 'COMPARE',
-      meaning: 'compare CON(X) with R',
-      summary: 'Set the condition codes: GT = 1 if CON(X) > R, EQ = 1 if CON(X) = R, LT = 1 if CON(X) < R (the other two become 0).',
+      meaning: 'compare content of X with R',
+      summary: 'Set the condition codes: GT = 1 if content of X > R, EQ = 1 if content of X = R, LT = 1 if content of X < R (the other two become 0).',
     },
     { opcode: 8, name: 'JUMP', meaning: 'X → PC', summary: 'Jump: the next instruction is taken from cell X.' },
-    { opcode: 9, name: 'JUMPGT', meaning: 'if GT = 1 then X → PC', summary: 'Jump to X if the last COMPARE found CON(X) > R.' },
+    { opcode: 9, name: 'JUMPGT', meaning: 'if GT = 1 then X → PC', summary: 'Jump to X if the last COMPARE found content of X > R.' },
     { opcode: 10, name: 'JUMPEQ', meaning: 'if EQ = 1 then X → PC', summary: 'Jump to X if the last COMPARE found them equal.' },
-    { opcode: 11, name: 'JUMPLT', meaning: 'if LT = 1 then X → PC', summary: 'Jump to X if the last COMPARE found CON(X) < R.' },
+    { opcode: 11, name: 'JUMPLT', meaning: 'if LT = 1 then X → PC', summary: 'Jump to X if the last COMPARE found content of X < R.' },
     { opcode: 12, name: 'JUMPNEQ', meaning: 'if EQ = 0 then X → PC', summary: 'Jump to X if the last COMPARE found them different.' },
-    { opcode: 13, name: 'IN', meaning: 'input → CON(X)', summary: 'Read the next input value into memory cell X.' },
-    { opcode: 14, name: 'OUT', meaning: 'CON(X) → output', summary: 'Print the contents of memory cell X.' },
+    { opcode: 13, name: 'IN', meaning: 'input → content of X', summary: 'Read the next input value into memory cell X.' },
+    { opcode: 14, name: 'OUT', meaning: 'content of X → output', summary: 'Print the content of memory cell X.' },
     { opcode: 15, name: 'HALT', meaning: 'stop', summary: 'Stop the machine. (The address field is not used.)', noOperand: true },
   ];
   const BY_NAME = Object.fromEntries(INSTRUCTIONS.map((i) => [i.name, i]));
@@ -81,7 +80,7 @@
   function microText(op, param) {
     switch (op) {
       case 'PC_TO_MAR': return 'PC → MAR';
-      case 'FETCH': return 'CON(MAR) → MDR   (fetch)';
+      case 'FETCH': return 'content of cell MAR → MDR   (fetch)';
       case 'MDR_TO_IR': return 'MDR → IR';
       case 'PC_INC': return 'PC + 1 → PC';
       case 'DECODE': return 'decode IR';
@@ -89,7 +88,7 @@
       case 'MDR_TO_R': return 'MDR → R';
       case 'R_TO_MDR': return 'R → MDR';
       case 'ZERO_TO_MDR': return '0 → MDR';
-      case 'STORE': return 'MDR → CON(MAR)   (store)';
+      case 'STORE': return 'MDR → content of cell MAR   (store)';
       case 'ALU_R': return param === 'ADD' ? 'R + MDR → R' : 'R − MDR → R';
       case 'ALU_MDR': return param === 'INC' ? 'MDR + 1 → MDR' : 'MDR − 1 → MDR';
       case 'ALU_COMPARE': return 'compare MDR with R → GT, EQ, LT';
@@ -112,9 +111,6 @@
   function wordBin(word) {
     const b = toBin(word, WORD_BITS);
     return `${b.slice(0, OPCODE_BITS)} ${b.slice(OPCODE_BITS)}`;
-  }
-  function toSigned(word) {
-    return word & SIGN_BIT ? word - (1 << WORD_BITS) : word;
   }
   function opcodeOf(word) {
     return (word >> ADDR_BITS) & ((1 << OPCODE_BITS) - 1);
@@ -142,7 +138,7 @@
     const errors = [];
     for (const tok of String(text).split(/[\s,;]+/).filter(Boolean)) {
       const v = parseNumber(tok);
-      if (v === null || v < MIN_VALUE || v > MAX_VALUE) errors.push(`"${tok}" is not a whole number between ${MIN_VALUE} and ${MAX_VALUE}`);
+      if (v === null || v < MIN_VALUE || v > MAX_VALUE) errors.push(`"${tok}" is not a whole number from ${MIN_VALUE} to ${MAX_VALUE}`);
       else values.push(v & WORD_MASK);
     }
     return { values, errors };
@@ -307,12 +303,11 @@
   const IR_ADDR_TEXT = `the address field of IR (its rightmost ${ADDR_BITS} bits)`;
 
   function aluResult(op, a, b) {
-    const sa = toSigned(a);
-    const raw = op === 'ADD' ? sa + toSigned(b) : op === 'SUB' ? sa - toSigned(b) : op === 'INC' ? sa + 1 : sa - 1;
+    const raw = op === 'ADD' ? a + b : op === 'SUB' ? a - b : op === 'INC' ? a + 1 : a - 1;
     return { value: raw & WORD_MASK, overflow: raw < MIN_VALUE || raw > MAX_VALUE, raw };
   }
   const OVERFLOW_TEXT = (raw) =>
-    ` The true result ${raw} does not fit in ${WORD_BITS} bits (${MIN_VALUE} … ${MAX_VALUE}), so it wraps around: this is called overflow.`;
+    ` The true result ${raw} does not fit in ${WORD_BITS} bits (${MIN_VALUE} … ${MAX_VALUE}), so it wraps around (only the last ${WORD_BITS} bits are kept): this is called overflow.`;
 
   const MICRO_OPS = {
     PC_TO_MAR() {
@@ -490,7 +485,7 @@
         ],
         text:
           `R (${W(a)}) and MDR (${W(b)}) go into the ALU. All ALU circuits compute at once, and the multiplexer selects the ${op === 'ADD' ? 'addition' : 'subtraction'} result: ` +
-          `${toSigned(a)} ${sym} ${toSigned(b)} = ${toSigned(res.value)}. The result goes into R.` +
+          `${a} ${sym} ${b} = ${res.value}. The result goes into R.` +
           (res.overflow ? OVERFLOW_TEXT(res.raw) : ''),
       };
     },
@@ -510,14 +505,14 @@
           { component: 'MDR', inputs: [port('from ALU', res.value, 'word')], outputs: [port('new value', res.value, 'word')] },
         ],
         text:
-          `The value in MDR (${W(a)}) goes through the ALU, which ${op === 'INC' ? 'adds' : 'subtracts'} 1: ${toSigned(a)} ${sym} 1 = ${toSigned(res.value)}. ` +
+          `The value in MDR (${W(a)}) goes through the ALU, which ${op === 'INC' ? 'adds' : 'subtracts'} 1: ${a} ${sym} 1 = ${res.value}. ` +
           'The result goes back into MDR. R is not used and does not change.' +
           (res.overflow ? OVERFLOW_TEXT(res.raw) : ''),
       };
     },
     ALU_COMPARE() {
-      const x = toSigned(this.mdr);
-      const r = toSigned(this.r);
+      const x = this.mdr;
+      const r = this.r;
       this.gt = x > r ? 1 : 0;
       this.eq = x === r ? 1 : 0;
       this.lt = x < r ? 1 : 0;
@@ -529,7 +524,7 @@
         alu: 'COMPARE',
         ioTable: [
           { component: 'CU', inputs: [], outputs: [port('ALU selector', 'COMPARE', 'text')] },
-          { component: 'ALU', inputs: [port('CON(X), from MDR', this.mdr, 'word'), port('R', this.r, 'word')], outputs: [port('result', `CON(X) ${rel} R`, 'text')] },
+          { component: 'ALU', inputs: [port('content of X (from MDR)', this.mdr, 'word'), port('R', this.r, 'word')], outputs: [port('result', `content of X ${rel} R`, 'text')] },
           { component: 'CC', inputs: [], outputs: [port('GT', this.gt, 'bit'), port('EQ', this.eq, 'bit'), port('LT', this.lt, 'bit')] },
         ],
         text: `The ALU compares the value from memory (MDR = ${x}) with R (${r}). Since ${x} ${rel} ${r}, the condition codes become GT = ${this.gt}, EQ = ${this.eq}, LT = ${this.lt}. R and memory do not change.`,
@@ -588,7 +583,7 @@
           { component: 'IN', inputs: [], outputs: [port('next input value', v, 'word')] },
           { component: 'MDR', inputs: [port('from input device', v, 'word')], outputs: [port('new value', v, 'word')] },
         ],
-        text: `The input device gives the next input value, ${W(v)} (= ${toSigned(v)}). It travels over the I/O bus into MDR.`,
+        text: `The input device gives the next input value, ${W(v)} (decimal ${v}). It travels over the I/O bus into MDR.`,
       };
     },
     MDR_TO_OUTPUT() {
@@ -601,9 +596,9 @@
         io: 'OUT',
         ioTable: [
           { component: 'MDR', inputs: [], outputs: [port('to output device', v, 'word')] },
-          { component: 'OUT', inputs: [port('value', v, 'word')], outputs: [port('printed', toSigned(v), 'text')] },
+          { component: 'OUT', inputs: [port('value', v, 'word')], outputs: [port('printed', v, 'text')] },
         ],
-        text: `The value in MDR, ${W(v)}, is sent over the I/O bus to the output device, which prints it as the decimal number ${toSigned(v)}.`,
+        text: `The value in MDR, ${W(v)}, is sent over the I/O bus to the output device, which prints it as the decimal number ${v}.`,
       };
     },
     HALT() {
@@ -708,7 +703,7 @@
       let word = 0;
       if (it.kind === 'data') {
         const v = resolve(it.expr, it.line);
-        if (v !== null && (v < MIN_VALUE || v > MAX_VALUE)) err(it.line, `${v} does not fit in ${WORD_BITS} bits: use a number from ${MIN_VALUE} to ${MAX_VALUE}`);
+        if (v !== null && (v < MIN_VALUE || v > MAX_VALUE)) err(it.line, `${v} does not fit in a cell (${WORD_BITS} bits): use a number from ${MIN_VALUE} to ${MAX_VALUE}`);
         word = (v ?? 0) & WORD_MASK;
       } else {
         let address = 0;
@@ -746,7 +741,6 @@
     parseValueList,
     toBin,
     wordBin,
-    toSigned,
     opcodeOf,
     addressOf,
     encode,

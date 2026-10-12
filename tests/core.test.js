@@ -24,7 +24,6 @@ test('machine size: 16 cells, 8-bit words, 4-bit op code and 4-bit address', () 
   assert.equal(VN.wordBin(0b00110101), '0011 0101');
   assert.equal(VN.disassemble(0b00110101), 'ADD 5');
   assert.equal(VN.disassemble(0b11110000), 'HALT');
-  assert.equal(VN.toSigned(0xff), -1);
 });
 
 test('parseNumber accepts decimal and binary only', () => {
@@ -39,7 +38,7 @@ test('assembler: textbook syntax with .BEGIN, labels, .DATA, -- comments and .EN
 AGAIN:  LOAD    ZERO   -- comment
         JUMPLT  AGAIN
         HALT
-ZERO:   .DATA   -1
+ZERO:   .DATA   255
 .END
         LOAD 3  -- ignored after .END`);
   assert.deepEqual(asm.errors, []);
@@ -51,8 +50,8 @@ ZERO:   .DATA   -1
 });
 
 test('assembler reports useful errors with line numbers', () => {
-  const asm = VN.assemble('LOAD nowhere\nFOO 3\nADD\nHALT 3\nX: .DATA 300\nX: .DATA 1\nLOAD 16\nLOAD: .DATA 1');
-  assert.deepEqual(asm.errors.map((e) => e.line), [1, 2, 3, 4, 5, 6, 7, 8]);
+  const asm = VN.assemble('LOAD nowhere\nFOO 3\nADD\nHALT 3\nX: .DATA 300\nX: .DATA 1\nLOAD 16\nLOAD: .DATA 1\nY: .DATA -1');
+  assert.deepEqual(asm.errors.map((e) => e.line), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
   assert.match(asm.errors[0].message, /Unknown label/);
   assert.match(asm.errors[1].message, /Unknown instruction/);
 });
@@ -70,12 +69,12 @@ test('fetch is PC → MAR, fetch, MDR → IR, PC + 1 → PC, then decode', () =>
     recs.map((r) => `${r.phase} ${r.rtl}`),
     [
       'FETCH PC → MAR',
-      'FETCH CON(MAR) → MDR   (fetch)',
+      'FETCH content of cell MAR → MDR   (fetch)',
       'FETCH MDR → IR',
       'FETCH PC + 1 → PC',
       'DECODE decode IR',
       'EXECUTE IR(address) → MAR',
-      'EXECUTE CON(MAR) → MDR   (fetch)',
+      'EXECUTE content of cell MAR → MDR   (fetch)',
       'EXECUTE MDR → R',
     ],
   );
@@ -85,24 +84,28 @@ test('fetch is PC → MAR, fetch, MDR → IR, PC + 1 → PC, then decode', () =>
 test('STORE, CLEAR, INCREMENT and DECREMENT change memory', () => {
   const m = machineFor('LOAD A\nSTORE B\nCLEAR A\nINCREMENT B\nDECREMENT C\nHALT\nA: .DATA 5\nB: .DATA 0\nC: .DATA 0');
   m.run();
-  assert.deepEqual([m.mem[6], m.mem[7], m.mem[8]], [0, 6, 255]);
+  assert.deepEqual([m.mem[6], m.mem[7], m.mem[8]], [0, 6, 255]); // 0 - 1 wraps around to 255
   assert.equal(m.r, 5); // INCREMENT/DECREMENT do not touch R
 });
 
-test('ADD and SUBTRACT work on R, with 8-bit wrap-around', () => {
-  const m = machineFor('LOAD A\nADD B\nSTORE A\nSUBTRACT C\nHALT\nA: .DATA 100\nB: .DATA 50\nC: .DATA 1');
+test('ADD and SUBTRACT work on R with unsigned 8-bit numbers (results wrap around)', () => {
+  const m = machineFor('LOAD A\nADD B\nSTORE A\nSUBTRACT C\nHALT\nA: .DATA 200\nB: .DATA 50\nC: .DATA 1');
   m.stepInstruction();
   m.stepInstruction();
-  assert.equal(VN.toSigned(m.r), -106); // 150 does not fit: overflow
+  assert.equal(m.r, 250);
   m.run();
-  assert.equal(VN.toSigned(m.r), -107);
+  assert.equal(m.r, 249);
+  const w = machineFor('LOAD A\nADD A\nHALT\nA: .DATA 200');
+  w.run();
+  assert.equal(w.r, 144); // 400 does not fit in 8 bits: 400 - 256
 });
 
 test('COMPARE sets GT/EQ/LT by comparing CON(X) with R (signed)', () => {
   const cases = [
     [5, 3, [1, 0, 0]],
     [3, 3, [0, 1, 0]],
-    [-2, 3, [0, 0, 1]],
+    [2, 3, [0, 0, 1]],
+    [200, 3, [1, 0, 0]],
   ];
   for (const [x, r, cc] of cases) {
     const m = machineFor(`LOAD R\nCOMPARE X\nHALT\nR: .DATA ${r}\nX: .DATA ${x}`);
@@ -176,6 +179,6 @@ for (const ex of EXAMPLES) {
   test(`example "${ex.title}" fits in memory and prints ${JSON.stringify(ex.expected)}`, () => {
     const m = machineFor(ex.source, VN.parseValueList(ex.input).values);
     assert.equal(m.run().reason, 'halted');
-    assert.deepEqual(m.output.map(VN.toSigned), ex.expected);
+    assert.deepEqual(m.output, ex.expected);
   });
 }
