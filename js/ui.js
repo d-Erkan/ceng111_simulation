@@ -152,6 +152,13 @@
     for (const [name, addr] of Object.entries(asm.symbols || {})) if (!(addr in labelAt)) labelAt[addr] = name;
     const info = new Array(VN.MEM_SIZE).fill(null).map(() => ({ kind: 'unused', label: '' }));
     for (const l of asm.listing) info[l.addr] = { kind: l.kind || 'instruction', label: labelAt[l.addr] || '' };
+    // A data row without a label of its own continues the list above it: ARR, ARR+1, ARR+2, ...
+    for (let i = 1; i < VN.MEM_SIZE; i++) {
+      if (info[i].kind !== 'data' || info[i].label) continue;
+      let k = i - 1;
+      while (k >= 0 && info[k].kind === 'data' && !labelAt[k]) k--;
+      if (k >= 0 && info[k].kind === 'data' && labelAt[k]) info[i].label = `${labelAt[k]}+${i - k}`;
+    }
     return info;
   }
 
