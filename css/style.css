@@ -169,7 +169,7 @@ textarea { width: 100%; min-height: 400px; resize: vertical; padding: 8px; font-
 .comp rect, .comp polygon { fill: var(--ps); stroke: var(--pc); stroke-width: 1.8; transition: stroke .15s, stroke-width .15s; }
 .comp.active rect, .comp.active polygon { stroke: var(--active); stroke-width: 4; filter: drop-shadow(0 0 5px var(--active)); }
 #diagram .name { font-weight: 800; font-size: 12px; fill: var(--pc); letter-spacing: .03em; }
-#diagram .sub { font-size: 9.5px; fill: var(--muted); }
+#diagram .sub { font-size: 9px; fill: var(--muted); }
 #diagram .full { font-size: 10px; font-weight: 600; fill: var(--text); }
 #diagram .name.center, #diagram .sub.center, #diagram .full.center, #diagram .val, #diagram .bus-val, #diagram .bus-name, #diagram .cc-name { text-anchor: middle; }
 #diagram .name.big { font-size: 18px; }
