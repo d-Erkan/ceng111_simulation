@@ -101,5 +101,9 @@ Tests (Node ≥ 20, no dependencies): `node --test tests/*.test.js`
 
 ## Hosting
 
+**After changing a CSS or JS file**, raise the version number in `index.html` (`style.css?v=3`, `ui.js?v=3`, … → `?v=4`),
+so that browsers load the new files instead of mixing them with old cached ones.
+
+
 The workflow in `.github/workflows/pages.yml` runs the tests and publishes the site to GitHub Pages on every push
 to `main`. One-time setup: **Settings → Pages → Source: GitHub Actions**.
