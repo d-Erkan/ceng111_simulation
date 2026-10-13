@@ -23,7 +23,7 @@
         <label><input type="radio" name="format" value="bin" checked> binary</label>
         <label><input type="radio" name="format" value="dec"> decimal</label>
       </fieldset>
-      <button id="btn-demo" class="demo-btn" title="Watch a short guided demo of the machine running a program">▶ Watch demo</button>
+      <button id="btn-demo" class="demo-btn" title="Watch a guided demo of the machine running a program, step by step">▶ Watch demo</button>
       <button id="btn-theme" class="theme-btn" title="Switch between light and dark colours">🌙 Dark</button>
       <a href="#help" class="link-btn">Instruction set &amp; help</a>
     </div>
@@ -84,31 +84,31 @@
 
           <!-- wires and buses -->
           <path data-wire="bus-ctrl" class="wire bus" d="M155,48 V26 H640" marker-end="url(#arrow)"/>
-          <path data-wire="bus-addr" class="wire bus" d="M576,261 H640" marker-end="url(#arrow)"/>
-          <path data-wire="bus-data" class="wire bus" d="M576,376 H640" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+          <path data-wire="bus-addr" class="wire bus" d="M576,269 H640" marker-end="url(#arrow)"/>
+          <path data-wire="bus-data" class="wire bus" d="M576,384 H640" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
           <path data-wire="bus-io" class="wire bus" d="M445,490 H640" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
           <path data-wire="bus-internal" class="wire bus-internal" d="M445,40 V490"/>
-          <path data-wire="w-ir-cu" class="wire" d="M300,79 H284" marker-end="url(#arrow)"/>
-          <path data-wire="w-cc-cu" class="wire" d="M300,153 H284" marker-end="url(#arrow)"/>
-          <path data-wire="w-ir-bus" class="wire" d="M430,79 H445"/>
-          <path data-wire="w-pc-bus" class="wire" d="M445,79 H460"/>
-          <path data-wire="w-pc-inc" class="wire" d="M513,110 V122" marker-end="url(#arrow)"/>
-          <path data-wire="w-pc-inc" class="wire" d="M537,124 V112" marker-end="url(#arrow)"/>
-          <path data-wire="w-mar-bus" class="wire" d="M445,261 H460"/>
-          <path data-wire="w-mdr-bus" class="wire" d="M445,376 H460"/>
-          <path data-wire="w-r-bus" class="wire" d="M240,401 H445"/>
+          <path data-wire="w-ir-cu" class="wire" d="M300,87 H284" marker-end="url(#arrow)"/>
+          <path data-wire="w-cc-cu" class="wire" d="M300,165 H284" marker-end="url(#arrow)"/>
+          <path data-wire="w-ir-bus" class="wire" d="M430,87 H445"/>
+          <path data-wire="w-pc-bus" class="wire" d="M445,87 H460"/>
+          <path data-wire="w-pc-inc" class="wire" d="M513,126 V136" marker-end="url(#arrow)"/>
+          <path data-wire="w-pc-inc" class="wire" d="M537,138 V128" marker-end="url(#arrow)"/>
+          <path data-wire="w-mar-bus" class="wire" d="M445,269 H460"/>
+          <path data-wire="w-mdr-bus" class="wire" d="M445,384 H460"/>
+          <path data-wire="w-r-bus" class="wire" d="M260,409 H445"/>
           <path data-wire="w-bus-alu" class="wire" d="M445,205 H228 V223" marker-end="url(#arrow)"/>
-          <path data-wire="w-r-alu" class="wire" d="M100,401 H55 V205 H112 V223" marker-end="url(#arrow)"/>
+          <path data-wire="w-r-alu" class="wire" d="M100,409 H55 V205 H112 V223" marker-end="url(#arrow)"/>
           <path data-wire="w-alu-r" class="wire" d="M170,305 V368" marker-end="url(#arrow)"/>
           <path data-wire="w-alu-bus" class="wire" d="M215,305 V340 H443" marker-end="url(#arrow)"/>
-          <path data-wire="w-alu-cc" class="wire" d="M246,262 H365 V182" marker-end="url(#arrow)"/>
+          <path data-wire="w-alu-cc" class="wire" d="M246,262 H365 V198" marker-end="url(#arrow)"/>
 
           <!-- bus labels and values -->
           <text id="t-bus-ctrl" class="bus-val" x="610" y="20"></text>
-          <text id="t-bus-addr" class="bus-val" x="608" y="250"></text>
-          <text class="bus-name" x="608" y="281">address</text>
-          <text id="t-bus-data" class="bus-val" x="608" y="365"></text>
-          <text class="bus-name" x="608" y="396">data</text>
+          <text id="t-bus-addr" class="bus-val" x="608" y="258"></text>
+          <text class="bus-name" x="608" y="289">address</text>
+          <text id="t-bus-data" class="bus-val" x="608" y="373"></text>
+          <text class="bus-name" x="608" y="404">data</text>
           <text id="t-bus-internal" class="bus-val" x="445" y="34"></text>
           <text class="bus-name" x="545" y="482">I/O bus</text>
           <text class="bus-name vertical" x="436" y="272" transform="rotate(-90 436 272)">internal bus</text>
@@ -117,7 +117,7 @@
           <g id="c-CU" class="comp part-ctrl">
             <rect x="30" y="48" width="252" height="134" rx="10"/>
             <text class="name" x="44" y="70">CONTROL UNIT</text>
-            <text class="sub" x="44" y="86">reads the instruction and directs every step</text>
+            <text class="sub" x="44" y="86">manages the fetch–decode–execute cycle</text>
             <text id="cu-phase" class="cu-line strong" x="44" y="110"></text>
             <text id="cu-instr" class="cu-line" x="44" y="132"></text>
             <text id="cu-rtl" class="cu-line mono" x="44" y="154"></text>
@@ -126,63 +126,69 @@
 
           <!-- registers -->
           <g id="c-IR" class="comp part-ctrl reg">
-            <rect x="300" y="48" width="130" height="62" rx="8"/>
-            <text class="name" x="310" y="65">IR</text>
-            <text class="sub" x="330" y="65">instruction</text>
-            <text id="v-IR" class="val" x="365" y="97"></text>
+            <rect x="300" y="48" width="130" height="78" rx="8"/>
+            <text class="name" x="310" y="64">IR</text>
+            <text class="full" x="310" y="77">instruction register</text>
+            <text class="sub" x="310" y="89">holds the instruction</text>
+            <text id="v-IR" class="val" x="365" y="114"></text>
           </g>
           <g id="c-PC" class="comp part-ctrl reg">
-            <rect x="460" y="48" width="130" height="62" rx="8"/>
-            <text class="name" x="470" y="65">PC</text>
-            <text class="sub" x="492" y="65">next address</text>
-            <text id="v-PC" class="val" x="525" y="97"></text>
+            <rect x="460" y="48" width="130" height="78" rx="8"/>
+            <text class="name" x="470" y="64">PC</text>
+            <text class="full" x="470" y="77">program counter</text>
+            <text class="sub" x="470" y="89">next address to fetch</text>
+            <text id="v-PC" class="val" x="525" y="114"></text>
           </g>
           <g id="c-INC" class="comp part-ctrl">
-            <rect x="501" y="124" width="48" height="24" rx="6"/>
-            <text class="name center" x="525" y="141">+1</text>
+            <rect x="501" y="138" width="48" height="22" rx="6"/>
+            <text class="name center" x="525" y="154">+1</text>
           </g>
           <g id="c-CC" class="comp part-ctrl">
-            <rect x="300" y="126" width="130" height="56" rx="8"/>
-            <text class="name" x="310" y="142">Condition codes</text>
-            <text class="cc-name" x="330" y="158">GT</text><text class="cc-name" x="365" y="158">EQ</text><text class="cc-name" x="400" y="158">LT</text>
-            <text id="v-GT" class="val cc-val" x="330" y="176"></text><text id="v-EQ" class="val cc-val" x="365" y="176"></text><text id="v-LT" class="val cc-val" x="400" y="176"></text>
+            <rect x="300" y="134" width="130" height="64" rx="8"/>
+            <text class="name" x="310" y="149">Condition codes</text>
+            <text class="sub" x="310" y="160">result of COMPARE</text>
+            <text class="cc-name" x="330" y="175">GT</text><text class="cc-name" x="365" y="175">EQ</text><text class="cc-name" x="400" y="175">LT</text>
+            <text id="v-GT" class="val cc-val" x="330" y="192"></text><text id="v-EQ" class="val cc-val" x="365" y="192"></text><text id="v-LT" class="val cc-val" x="400" y="192"></text>
           </g>
           <g id="c-MAR" class="comp part-memif reg">
-            <rect x="460" y="230" width="116" height="62" rx="8"/>
-            <text class="name" x="470" y="247">MAR</text>
-            <text class="sub" x="503" y="247">address out</text>
-            <text id="v-MAR" class="val" x="518" y="279"></text>
+            <rect x="460" y="230" width="116" height="78" rx="8"/>
+            <text class="name" x="470" y="246">MAR</text>
+            <text class="full" x="470" y="258">memory address</text>
+            <text class="full" x="470" y="269">register</text>
+            <text class="sub" x="470" y="281">address to access</text>
+            <text id="v-MAR" class="val" x="518" y="300"></text>
           </g>
           <g id="c-MDR" class="comp part-memif reg">
-            <rect x="460" y="345" width="116" height="62" rx="8"/>
-            <text class="name" x="470" y="362">MDR</text>
-            <text class="sub" x="503" y="362">data in / out</text>
-            <text id="v-MDR" class="val" x="518" y="394"></text>
+            <rect x="460" y="345" width="116" height="78" rx="8"/>
+            <text class="name" x="470" y="361">MDR</text>
+            <text class="full" x="470" y="373">memory data</text>
+            <text class="full" x="470" y="384">register</text>
+            <text class="sub" x="470" y="396">data read / written</text>
+            <text id="v-MDR" class="val" x="518" y="415"></text>
           </g>
           <g id="c-ALU" class="comp part-data">
             <polygon points="70,225 155,225 170,245 185,225 270,225 235,305 105,305"/>
-            <text class="name center big" x="170" y="270">ALU</text>
-            <text class="sub center" x="170" y="287">calculates and compares</text>
+            <text class="name center big" x="170" y="262">ALU</text>
+            <text class="full center" x="170" y="277">arithmetic logic unit</text>
+            <text class="sub center" x="170" y="290">does +, −, +1, −1, compare</text>
             <text class="port-label" x="112" y="239">A</text>
             <text class="port-label" x="228" y="239">B</text>
           </g>
           <text id="v-ALU" class="alu-op" x="252" y="322"></text>
           <g id="c-R" class="comp part-data reg">
-            <rect x="100" y="370" width="140" height="62" rx="8"/>
-            <text class="name" x="110" y="387">Register (R)</text>
-            <text class="sub" x="110" y="401">holds a value</text>
-            <text id="v-R" class="val" x="170" y="419"></text>
+            <rect x="100" y="370" width="160" height="78" rx="8"/>
+            <text class="name" x="110" y="386">R</text>
+            <text class="full" x="110" y="399">general purpose register</text>
+            <text class="sub" x="110" y="411">operand and ALU result</text>
+            <text id="v-R" class="val" x="180" y="436"></text>
           </g>
 
           <!-- memory (rows generated by ui.js) -->
           <g id="c-MEM" class="part-memory">
-            <text class="box-title" x="654" y="25">MEMORY · 16 cells, 8 bits each</text>
+            <text class="box-title" x="654" y="25">MEMORY · program and data · 16 rows of 8 bits</text>
             <text class="mhead" x="660" y="58">#</text>
             <text class="mhead" x="680" y="58">Address</text>
-            <text class="mhead mid" x="829" y="38">Contents</text>
-            <line class="mhead-line" x1="748" y1="42" x2="910" y2="42"/>
-            <text class="mhead mid op" x="790" y="53">Operation code</text><text class="mhead mid op" x="790" y="63">(opcode)</text>
-            <text class="mhead mid fld" x="870" y="53">Address</text><text class="mhead mid fld" x="870" y="63">field</text>
+            <text class="mhead mid" x="820" y="58">Contents</text>
             <text class="mhead" x="915" y="58">Decimal</text>
             <text class="mhead" x="972" y="58">Instruction</text>
             <g id="mem-rows"></g>
@@ -204,7 +210,7 @@
       <ul class="legend" aria-label="Colour legend">
         <li><span class="dot part-ctrl"></span>control: control unit, PC, IR, condition codes</li>
         <li><span class="dot part-memif"></span>memory interface: MAR, MDR</li>
-        <li><span class="dot part-data"></span>calculation: ALU, R</li>
+        <li><span class="dot part-data"></span>calculation: ALU, R (general purpose register)</li>
         <li><span class="dot part-memory"></span>memory</li>
         <li><span class="dot part-io"></span>input / output</li>
         <li><span class="dot active"></span>taking part in this step</li>
@@ -216,10 +222,10 @@
     <!-- ============================== Memory editor & I/O ============================== -->
     <section class="panel side" aria-labelledby="mem-title">
       <h2 id="mem-title">Memory editor</h2>
-      <p class="hint">16 cells, 8 bits each. To change a cell, click its contents and type 8 binary digits.</p>
+      <p class="hint">16 rows, 8 bits each. To change a row, click its contents and type 8 binary digits.</p>
       <div class="mem-table-wrap">
         <table class="mem-table" id="mem-table">
-          <thead><tr><th>#</th><th>Address</th><th>Contents<small class="th-sub"><span class="op">Opcode</span> <span class="fld">Address field</span></small></th><th>Decimal</th><th>Instruction</th></tr></thead>
+          <thead><tr><th>#</th><th>Address</th><th>Contents</th><th>Decimal</th><th>Instruction</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -267,7 +273,7 @@
             <b>IR</b> (instruction register): the instruction being executed.
             <b>MAR</b> (memory address register): the address sent to memory.
             <b>MDR</b> (memory data register): the value fetched from or stored into memory.
-            <b>Register (R)</b>: the register used by LOAD, STORE, ADD, SUBTRACT and COMPARE.</li>
+            <b>R</b> (general purpose register): the register used by LOAD, STORE, ADD, SUBTRACT and COMPARE.</li>
           <li><b>Condition codes GT, EQ, LT:</b> set only by COMPARE, and used by the conditional jumps.</li>
           <li><b>Numbers</b> are whole numbers from 0 to 255 (8 bits). If a result does not fit (for example 200 + 100, or 3 − 5), only the last 8 bits are kept: this is called <i>overflow</i>.</li>
           <li><b>content of X</b> means "the number stored in memory cell X".</li>

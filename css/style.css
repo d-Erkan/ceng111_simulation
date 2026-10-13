@@ -170,7 +170,8 @@ textarea { width: 100%; min-height: 400px; resize: vertical; padding: 8px; font-
 .comp.active rect, .comp.active polygon { stroke: var(--active); stroke-width: 4; filter: drop-shadow(0 0 5px var(--active)); }
 #diagram .name { font-weight: 800; font-size: 12px; fill: var(--pc); letter-spacing: .03em; }
 #diagram .sub { font-size: 9.5px; fill: var(--muted); }
-#diagram .name.center, #diagram .sub.center, #diagram .val, #diagram .bus-val, #diagram .bus-name, #diagram .cc-name { text-anchor: middle; }
+#diagram .full { font-size: 10px; font-weight: 600; fill: var(--text); }
+#diagram .name.center, #diagram .sub.center, #diagram .full.center, #diagram .val, #diagram .bus-val, #diagram .bus-name, #diagram .cc-name { text-anchor: middle; }
 #diagram .name.big { font-size: 18px; }
 #diagram .val { font-family: var(--mono); font-size: 16px; font-weight: 700; }
 #diagram .val.small { font-size: 12px; font-weight: 600; }
@@ -202,14 +203,7 @@ textarea { width: 100%; min-height: 400px; resize: vertical; padding: 8px; font-
 /* memory rows inside the diagram */
 #diagram .mhead { font-size: 10.5px; font-weight: 700; fill: var(--c-memory); }
 #diagram .mhead.mid { text-anchor: middle; }
-#diagram .mhead.op, #diagram .mrow .mop { fill: var(--c-ctrl); }
-#diagram .mhead.fld, #diagram .mrow .mfld { fill: var(--c-memif); }
-#diagram .mrow .mop, #diagram .mrow .mfld { text-anchor: middle; font-weight: 700; }
-.mhead-line { stroke: var(--c-memory); stroke-width: 1; opacity: .6; }
-.mem-table th .th-sub .op { color: var(--c-ctrl); }
-.mem-table th .th-sub .fld { color: var(--c-memif); }
-.mem-table th .th-sub { font-weight: 600; font-size: 10.5px; display: block; line-height: 1.3; white-space: nowrap; }
-.mem-table th .th-sub span { white-space: nowrap; }
+#diagram .mrow .mword { text-anchor: middle; font-weight: 700; }
 .mrow rect { fill: transparent; }
 #diagram .mrow text { font-family: var(--mono); font-size: 11.5px; }
 #diagram .mrow .mnum, #diagram .mrow .mdis, #diagram .mrow .mdec { fill: var(--muted); }

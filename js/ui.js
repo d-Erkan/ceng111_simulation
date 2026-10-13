@@ -39,7 +39,7 @@
     practiceView: null, // null | 'form' | 'result'
     practiceResult: null,
     practiceStats: { answered: 0, perfect: 0 },
-    demo: null, // { frames, i, paused, timer, restore } while the guided demo runs
+    demo: null, // { choosing, kind, frames, i, restore } while a guided demo is open
   };
 
   // ------------------------------------------------------------------------------------------------ formatting
@@ -342,7 +342,7 @@
   // ------------------------------------------------------------------------------------------------ rendering
 
   function buildStatic() {
-    // Memory rows inside the diagram: # | Address | Contents (operation code | address field) | Decimal | Instruction
+    // Memory rows inside the diagram: # | Address | Contents (8 bits, a space after the first 4) | Decimal | Instruction
     const g = $('#mem-rows');
     const ns = 'http://www.w3.org/2000/svg';
     for (let i = 0; i < VN.MEM_SIZE; i++) {
@@ -353,8 +353,7 @@
       row.innerHTML = `<rect x="650" y="${y}" width="420" height="20.5" rx="4"></rect>
         <text class="mnum" x="660" y="${y + 15}">${i}</text>
         <text class="maddr" x="680" y="${y + 15}">${VN.toBin(i, VN.ADDR_BITS)}</text>
-        <text class="mop" x="790" y="${y + 15}"></text>
-        <text class="mfld" x="870" y="${y + 15}"></text>
+        <text class="mword" x="820" y="${y + 15}"></text>
         <text class="mdec" x="915" y="${y + 15}"></text>
         <text class="mdis" x="972" y="${y + 15}"></text>
         <text class="pc-mark" x="1046" y="${y + 15}"></text>`;
@@ -367,7 +366,7 @@
       const tr = document.createElement('tr');
       tr.id = `mt-${i}`;
       tr.innerHTML = `<td class="rownum">${i}</td><td class="addr">${VN.toBin(i, VN.ADDR_BITS)}</td>
-        <td><input type="text" maxlength="9" aria-label="Contents of cell ${i}, 8 binary digits" spellcheck="false"></td>
+        <td><input type="text" maxlength="9" aria-label="Contents of row ${i}, 8 binary digits" spellcheck="false"></td>
         <td class="num"></td><td class="dis"></td>`;
       const inp = tr.querySelector('input');
       inp.addEventListener('change', () => {
@@ -445,9 +444,7 @@
       const isPc = i === machine.pc && !machine.halted;
       const isAccess = bus.address === i;
       const row = $(`#m-${i}`);
-      const bits = VN.toBin(v, VN.WORD_BITS);
-      row.querySelector('.mop').textContent = bits.slice(0, VN.OPCODE_BITS);
-      row.querySelector('.mfld').textContent = bits.slice(VN.OPCODE_BITS);
+      row.querySelector('.mword').textContent = VN.wordBin(v);
       row.querySelector('.mdec').textContent = String(v);
       row.querySelector('.mdis').textContent = VN.disassemble(v);
       row.querySelector('.pc-mark').textContent = isPc ? '◀ PC' : '';
@@ -637,7 +634,7 @@
   }
 
   // ------------------------------------------------------------------------------------------------ guided demo
-  // Short, self-running walkthroughs on the real diagram. Students choose one of two demos:
+  // Short walkthroughs on the real diagram; students move through them with Next / Previous. They choose one of two demos:
   //   - "add":  the "a = b + c" example, the first instruction step by step, then the others one at a time;
   //   - "loop": 1 + 2 + 3 + 4 + 5 with a loop (5 iterations), the first iteration instruction by instruction,
   //             then one whole iteration at a time, then the exit from the loop.
@@ -649,20 +646,17 @@
     if (kind === 'loop') return loopDemoFrames();
     const frames = [
       {
-        ms: 7000,
         title: 'Welcome! This is a tiny computer.',
         text: 'On the left is the <b>CPU</b> (processor), on the right the <b>memory</b>. They are connected by <b>buses</b>, the thick lines that carry addresses and data. In this demo the computer runs a very small program while you watch.',
       },
       {
-        ms: 8000,
         title: 'The program is already in memory',
         text: 'The program computes <b>a = b + c</b> and prints a. Cells 0–4 hold the <b>instructions</b> (LOAD, ADD, STORE, OUT, HALT) and cells 5–7 hold the <b>numbers</b> a = 0, b = 5, c = 7. Instructions and numbers are stored in the same memory: this is the Von Neumann idea. Each instruction is done in three phases: <b>fetch</b>, <b>decode</b>, <b>execute</b>.',
       },
     ];
-    for (let k = 1; k <= 8; k++) frames.push({ ms: 6500, action: 'micro', firstInstr: true, k });
-    for (let n = 2; n <= 5; n++) frames.push({ ms: 6000, action: 'instr', n });
+    for (let k = 1; k <= 8; k++) frames.push({ action: 'micro', firstInstr: true, k });
+    for (let n = 2; n <= 5; n++) frames.push({ action: 'instr', n });
     frames.push({
-      ms: 0,
       tag: 'Finished',
       title: 'Your turn!',
       text: 'The machine printed <b>12</b> (5 + 7) and stopped at HALT. Now try it yourself: press <b>⟲ Reset</b>, then <b>Next step</b>, and read the explanation under the picture at every step. Parts that take part in a step light up in yellow. When you are ready, turn on <b>Practice mode</b> to test yourself.',
@@ -685,22 +679,19 @@
   function loopDemoFrames() {
     const frames = [
       {
-        ms: 7000,
         title: 'A loop: 1 + 2 + 3 + 4 + 5',
         text: 'This program adds the numbers 1 to 5 and prints the sum. Cells 0–8 hold the <b>instructions</b>; cell 9 is <b>SUM</b> (the running total, starts at 0), cell 10 is <b>I</b> (the number to add, starts at 1) and cell 11 is <b>LIMIT</b> (6).',
       },
       {
-        ms: 8000,
         title: 'The same instructions, again and again',
         text: 'Instructions 0–6 are the <b>loop body</b>. At the end of the body, <b>JUMPGT</b> sends the machine back to address 0000 as long as LIMIT &gt; I. So the body runs <b>5 times</b> (I = 1, 2, 3, 4, 5). Watch PC: it goes 0, 1, 2, … 6, and then back to 0.',
       },
     ];
-    for (let n = 1; n <= LOOP_DEMO.bodyLength; n++) frames.push({ ms: 6500, action: 'instr', loop: true, n });
-    for (let k = 2; k <= LOOP_DEMO.iterations; k++) frames.push({ ms: 6000, action: 'iter', k });
-    frames.push({ ms: 6000, action: 'instr', loop: true, n: 8 });
-    frames.push({ ms: 5000, action: 'instr', loop: true, n: 9 });
+    for (let n = 1; n <= LOOP_DEMO.bodyLength; n++) frames.push({ action: 'instr', loop: true, n });
+    for (let k = 2; k <= LOOP_DEMO.iterations; k++) frames.push({ action: 'iter', k });
+    frames.push({ action: 'instr', loop: true, n: 8 });
+    frames.push({ action: 'instr', loop: true, n: 9 });
     frames.push({
-      ms: 0,
       tag: 'Finished',
       title: 'Your turn!',
       text: 'The loop body ran 5 times (5 × 7 = 35 instructions), then OUT and HALT: <b>37 instructions</b> in total, and the machine printed <b>15</b>. Try it yourself: choose example 8 in <b>Examples</b>, press <b>⟲ Reset</b> and step through it. A good exercise: what are SUM and I after 3 iterations? Turn on <b>Practice mode</b> to check your predictions.',
@@ -725,7 +716,7 @@
     stopRun();
     if (state.practice) setPractice(false);
     const restore = auto ? null : { src: $('#asm-src').value, input: $('#input-values').value };
-    state.demo = { choosing: true, frames: [], i: -1, paused: false, timer: null, restore };
+    state.demo = { choosing: true, frames: [], i: -1, restore };
     document.body.classList.add('demo');
     $('.machine').scrollIntoView({ behavior: 'smooth', block: 'start' });
     render();
@@ -734,42 +725,45 @@
   function runDemo(kind) {
     const d = state.demo;
     if (!d) return;
-    Object.assign(d, { choosing: false, kind, frames: demoFrames(kind), i: -1, paused: false });
+    Object.assign(d, { choosing: false, kind, frames: demoFrames(kind), i: -1 });
     loadExample(kind === 'loop' ? 'loop' : 'add');
     nextDemoFrame();
   }
 
-  function nextDemoFrame() {
-    const d = state.demo;
-    if (!d) return;
-    clearTimeout(d.timer);
-    if (d.i >= d.frames.length - 1) return;
-    d.i += 1;
-    const f = d.frames[d.i];
+  /** Does what a frame shows on the machine (one step, one instruction or one loop iteration). */
+  function applyDemoFrame(f) {
     if (f.action === 'micro') {
       doMicroStep();
       f.rec = state.lastRec;
     } else if (f.action === 'instr') {
-      const recs = doInstruction();
-      f.recs = recs;
+      f.recs = doInstruction();
     } else if (f.action === 'iter') {
       f.recs = runIteration();
     }
-    render();
-    scheduleDemo();
   }
 
-  function scheduleDemo() {
+  /** Goes back one frame: reloads the program and replays the frames before it. */
+  function prevDemoFrame() {
     const d = state.demo;
-    clearTimeout(d.timer);
-    const f = d.frames[d.i];
-    if (!d.paused && f.ms) d.timer = setTimeout(nextDemoFrame, f.ms);
+    if (!d || d.choosing || d.i <= 0) return;
+    const target = d.i - 1;
+    loadExample(d.kind === 'loop' ? 'loop' : 'add');
+    for (let k = 0; k <= target; k++) applyDemoFrame(d.frames[k]);
+    d.i = target;
+    render();
+  }
+
+  function nextDemoFrame() {
+    const d = state.demo;
+    if (!d || d.choosing || d.i >= d.frames.length - 1) return;
+    d.i += 1;
+    applyDemoFrame(d.frames[d.i]);
+    render();
   }
 
   function endDemo() {
     const d = state.demo;
     if (!d) return;
-    clearTimeout(d.timer);
     state.demo = null;
     document.body.classList.remove('demo');
     try {
@@ -837,10 +831,10 @@
       box.innerHTML = `<div class="demo-card">
       <div class="demo-top"><span class="demo-tag">▶ DEMO · Choose a demo</span></div>
       <h3>Watch the machine run a program</h3>
-      <p>Pick a demo. It runs by itself with an explanation at every step; you can pause it or go faster with <b>Next</b>.</p>
+      <p>Pick a demo. Move through it at your own pace with <b>Next ▶</b> and <b>◀ Previous</b> (or the ← → arrow keys); every step has an explanation.</p>
       <div class="demo-choices">
-        <button id="demo-add" class="demo-choice"><b>1. a = b + c</b><span>One instruction step by step (fetch, decode, execute), then the rest of a 5-instruction program. About 1.5 minutes.</span></button>
-        <button id="demo-loop" class="demo-choice"><b>2. A loop: 1 + 2 + 3 + 4 + 5</b><span>The same instructions run 5 times; JUMPGT jumps back until the loop ends. About 1.5 minutes.</span></button>
+        <button id="demo-add" class="demo-choice"><b>1. a = b + c</b><span>One instruction step by step (fetch, decode, execute), then the rest of a 5-instruction program. 15 steps.</span></button>
+        <button id="demo-loop" class="demo-choice"><b>2. A loop: 1 + 2 + 3 + 4 + 5</b><span>The same instructions run 5 times; JUMPGT jumps back until the loop ends. 16 steps.</span></button>
       </div>
       <div class="btn-row"><button id="demo-close">✕ Skip demo</button></div>
     </div>`;
@@ -860,7 +854,7 @@
       <p>${c.text}</p>
       <div class="demo-progress"><span style="width:${Math.round(((d.i + 1) / d.frames.length) * 100)}%"></span></div>
       <div class="btn-row">
-        ${last ? `<button id="demo-close" class="primary">Start working ▶</button><button id="demo-other">▶ Watch the ${d.kind === 'loop' ? 'a = b + c' : 'loop'} demo</button>` : `<button id="demo-pause">${d.paused ? '▶ Continue' : '❚❚ Pause'}</button><button id="demo-next" class="primary">Next ▶</button><button id="demo-close">✕ Skip demo</button>`}
+        ${last ? `<button id="demo-prev">◀ Previous</button><button id="demo-close" class="primary">Start working ▶</button><button id="demo-other">▶ Watch the ${d.kind === 'loop' ? 'a = b + c' : 'loop'} demo</button>` : `<button id="demo-prev"${d.i <= 0 ? ' disabled' : ''}>◀ Previous</button><button id="demo-next" class="primary">Next ▶</button><button id="demo-close">✕ Skip demo</button>`}
       </div>
     </div>`;
     const on = (id, fn) => {
@@ -870,11 +864,7 @@
     on('#demo-close', endDemo);
     on('#demo-other', () => runDemo(d.kind === 'loop' ? 'add' : 'loop'));
     on('#demo-next', nextDemoFrame);
-    on('#demo-pause', () => {
-      d.paused = !d.paused;
-      scheduleDemo();
-      render();
-    });
+    on('#demo-prev', prevDemoFrame);
   }
 
   // ------------------------------------------------------------------------------------------------ events
@@ -950,6 +940,8 @@
     document.addEventListener('keydown', (e) => {
       if (state.demo) {
         if (e.key === 'Escape') endDemo();
+        else if (e.key === 'ArrowRight') nextDemoFrame();
+        else if (e.key === 'ArrowLeft') prevDemoFrame();
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;

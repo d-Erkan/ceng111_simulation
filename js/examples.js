@@ -28,7 +28,7 @@ C:      .DATA   7
     },
     {
       id: 'expr',
-      title: '2. A = B + C − 7 (slides, Week 4)',
+      title: '2. A = B + C − 7 (slides, Week 3)',
       input: '',
       expected: [13],
       source: `.BEGIN
@@ -88,7 +88,7 @@ ZERO:   .DATA   0
     },
     {
       id: 'sum',
-      title: '5. Sum of numbers until 0 is entered (slides, Week 4)',
+      title: '5. Sum of numbers until 0 is entered (slides, Week 3)',
       input: '5, 7, 3, 0',
       expected: [15],
       source: `.BEGIN

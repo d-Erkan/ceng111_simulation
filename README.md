@@ -61,18 +61,18 @@ The whole instruction set is defined in `js/core.js`: `INSTRUCTIONS` (op codes a
 
 ![Demo: the machine running a = b + c](docs/demo.gif)
 
-- **Guided demos:** on the first visit, students choose one of two short demos that run on the real diagram with
-  an explanation at every step: `a = b + c` (the first instruction step by step, then one instruction at a time) or
+- **Guided demos:** on the first visit, students choose one of two short demos on the real diagram and move through
+  them at their own pace with **Next ▶** / **◀ Previous** (or the arrow keys), with an explanation at every step: `a = b + c` (the first instruction step by step, then one instruction at a time) or
   a **loop** that adds 1 + 2 + … + 5 (the first iteration instruction by instruction, then one iteration at a time,
   then the exit from the loop). The **▶ Watch demo** button brings the choice back. `docs/demo.gif` is a recording of it, for announcements.
-- **Datapath diagram:** the active components light up, the buses carrying data are animated, and each bus shows
+- **Datapath diagram:** every part shows its full name and what it does (e.g. *MAR, memory address register*); the active components light up, the buses carrying data are animated, and each bus shows
   its value. The control bus shows the FETCH or STORE signal.
 - **An explanation of every step** in plain language, with the register-transfer notation and a table of what
   each part gets (input) and gives (output).
 - **Stepping controls:** Next step, Next instruction, Run (four speeds), Undo and Reset.
 - **Automatic loading:** the program is put into memory as soon as it is typed or an example is chosen.
 - **Colour-coded parts** (control, memory interface, calculation, memory, I/O), explanations coloured by phase, and a light/dark switch.
-- **Memory editor:** every cell in binary, with its decimal value and its meaning as an instruction.
+- **Memory editor:** 16 rows of 8 bits (written `0000 1001`), with the decimal value and the meaning as an instruction.
 - **Practice mode:** before each instruction, students predict PC, IR, MAR, MDR, R and the condition codes, then
   check their answers, see the correct ones, and see the steps that happened.
 - **Execution trace:** one row per step or per instruction, exportable to CSV (useful for answer keys).
