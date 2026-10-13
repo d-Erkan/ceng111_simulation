@@ -282,7 +282,8 @@ table { border-collapse: collapse; }
 .mem-table td { padding: 2px 3px; border-bottom: 1px solid var(--border); font-family: var(--mono); white-space: nowrap; }
 .mem-table td.rownum { color: var(--muted); text-align: right; padding-right: 5px; }
 .mem-table td.addr { color: var(--muted); }
-.mem-table td.kind { text-align: center; font-family: system-ui, sans-serif; font-weight: 800; font-size: 11px; padding: 2px 2px; }
+.mem-table td.kind { text-align: center; font-family: system-ui, sans-serif; font-weight: 700; font-size: 9.5px; padding: 2px 3px 2px 1px; }
+.mem-table th.kind-head { font-size: 9.5px; text-align: center; padding-left: 1px; padding-right: 3px; }
 .mem-table td.kind.k-I { color: var(--c-ctrl); }
 .mem-table td.kind.k-D { color: var(--c-memory); }
 .mem-table td.num { text-align: right; padding-right: 5px; }

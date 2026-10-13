@@ -399,9 +399,9 @@
     for (let i = 0; i < VN.MEM_SIZE; i++) {
       const tr = document.createElement('tr');
       tr.id = `mt-${i}`;
-      tr.innerHTML = `<td class="rownum">${i}</td><td class="kind"></td><td class="addr">${VN.toBin(i, VN.ADDR_BITS)}</td>
+      tr.innerHTML = `<td class="rownum">${i}</td><td class="addr">${VN.toBin(i, VN.ADDR_BITS)}</td>
         <td><input type="text" maxlength="9" aria-label="Contents of row ${i}, 8 binary digits" spellcheck="false"></td>
-        <td class="num"></td><td class="dis"></td>`;
+        <td class="num"></td><td class="dis"></td><td class="kind"></td>`;
       const inp = tr.querySelector('input');
       inp.addEventListener('change', () => {
         const v = parseUserValue(inp.value, 'word', 'bin');

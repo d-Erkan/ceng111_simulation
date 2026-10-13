@@ -9,7 +9,7 @@
     // Apply the saved light/dark theme before the page is drawn (no flash).
     try { const t = localStorage.getItem('ceng111-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5">
+  <link rel="stylesheet" href="css/style.css?v=6">
 </head>
 <body>
   <header class="topbar">
@@ -233,7 +233,7 @@
       <p class="hint">16 rows, 8 bits each. <b>I</b> = instruction, <b>D</b> = data. To change a row, click its contents and type 8 binary digits.</p>
       <div class="mem-table-wrap">
         <table class="mem-table" id="mem-table">
-          <thead><tr><th>#</th><th title="I = instruction, D = data">I/D</th><th>Address</th><th>Contents</th><th title="Decimal value">Dec.</th><th>Instructions / data</th></tr></thead>
+          <thead><tr><th>#</th><th>Address</th><th>Contents</th><th title="Decimal value">Dec.</th><th>Instructions / data</th><th class="kind-head" title="I = instruction, D = data">I/D</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -327,6 +327,6 @@ ZERO:   .DATA   0         -- a data cell holding 0
 
   <script src="js/core.js?v=4"></script>
   <script src="js/examples.js?v=4"></script>
-  <script src="js/ui.js?v=6"></script>
+  <script src="js/ui.js?v=7"></script>
 </body>
 </html>
