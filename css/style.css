@@ -194,7 +194,16 @@ textarea { width: 100%; min-height: 400px; resize: vertical; padding: 8px; font-
 
 .wire { fill: none; stroke: var(--wire); stroke-width: 2; }
 .wire.bus { stroke-width: 5; stroke-linecap: round; }
-.wire.bus-internal { stroke-width: 7; stroke-linecap: round; }
+.wire.bus-internal { stroke-width: 7; stroke-linecap: butt; }
+#diagram .bus-val.start { text-anchor: start; }
+#diagram .ctrl-signal { text-anchor: middle; font-size: 11px; font-weight: 700; fill: var(--muted); letter-spacing: .03em; }
+#diagram .ctrl-signal.on { fill: var(--accent); }
+/* rows of memory that the program does not use */
+.mrow.unused text { opacity: .35; }
+.mem-table tr.unused td { opacity: .45; }
+.mem-table tr.unused input { opacity: .6; }
+.site-footer { text-align: center; color: var(--muted); font-size: 13px; padding: 18px 16px 26px; }
+.site-footer a { color: inherit; text-decoration: underline; }
 .arrowhead { fill: var(--wire); }
 .wire.active { stroke: var(--active); stroke-dasharray: 9 6; animation: flow .6s linear infinite; }
 @keyframes flow { to { stroke-dashoffset: -15; } }
@@ -268,18 +277,18 @@ table { border-collapse: collapse; }
 
 /* ---------- memory editor ---------- */
 .mem-table-wrap { border: 1px solid var(--c-memory); border-radius: 8px; overflow-x: auto; }
-.mem-table { width: 100%; font-size: 12.5px; }
-.mem-table th { background: var(--c-memory-soft); color: var(--c-memory); text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); font-weight: 700; }
-.mem-table td { padding: 2px 5px; border-bottom: 1px solid var(--border); font-family: var(--mono); white-space: nowrap; }
-.mem-table td.rownum { color: var(--muted); text-align: right; padding-right: 8px; }
+.mem-table { width: 100%; font-size: 12px; }
+.mem-table th { background: var(--c-memory-soft); color: var(--c-memory); text-align: left; padding: 5px 4px; line-height: 1.2; font-size: 11.5px; border-bottom: 1px solid var(--border); font-weight: 700; }
+.mem-table td { padding: 2px 3px; border-bottom: 1px solid var(--border); font-family: var(--mono); white-space: nowrap; }
+.mem-table td.rownum { color: var(--muted); text-align: right; padding-right: 5px; }
 .mem-table td.addr { color: var(--muted); }
-.mem-table td.num { text-align: right; padding-right: 10px; }
-.mem-table input { font-family: var(--mono); width: 6.9em; padding: 1px 4px; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 4px; }
+.mem-table td.num { text-align: right; padding-right: 5px; }
+.mem-table input { font-family: var(--mono); width: 6.3em; padding: 1px 4px; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 4px; }
 .mem-table input:focus { border-color: var(--fetch); }
 .mem-table input.invalid { border-color: var(--bad); }
 .mem-table tr.pc td { background: var(--accent-soft); }
 .mem-table tr.access td { background: var(--active-soft); }
-.mem-table td.dis { color: var(--muted); }
+.mem-table td.dis { color: var(--muted); white-space: normal; }
 .mem-table .pc-tag { color: var(--accent); font-weight: 700; font-family: system-ui, sans-serif; }
 
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); margin-top: 6px; }

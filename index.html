@@ -9,7 +9,7 @@
     // Apply the saved light/dark theme before the page is drawn (no flash).
     try { const t = localStorage.getItem('ceng111-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="css/style.css?v=3">
+  <link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
   <header class="topbar">
@@ -87,7 +87,7 @@
           <path data-wire="bus-addr" class="wire bus" d="M576,275 H640" marker-end="url(#arrow)"/>
           <path data-wire="bus-data" class="wire bus" d="M576,390 H640" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
           <path data-wire="bus-io" class="wire bus" d="M445,490 H640" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-          <path data-wire="bus-internal" class="wire bus-internal" d="M445,40 V490"/>
+          <path data-wire="bus-internal" class="wire bus-internal" d="M445,26 V490"/>
           <path data-wire="w-ir-cu" class="wire" d="M300,93 H284" marker-end="url(#arrow)"/>
           <path data-wire="w-cc-cu" class="wire" d="M300,184 H284" marker-end="url(#arrow)"/>
           <path data-wire="w-ir-bus" class="wire" d="M430,93 H445"/>
@@ -104,12 +104,12 @@
           <path data-wire="w-alu-cc" class="wire" d="M246,277 H365 V224" marker-end="url(#arrow)"/>
 
           <!-- bus labels and values -->
-          <text id="t-bus-ctrl" class="bus-val" x="610" y="20"></text>
+          <text id="t-bus-ctrl" class="ctrl-signal" x="300" y="19">control signal: none</text>
           <text id="t-bus-addr" class="bus-val" x="608" y="264"></text>
           <text class="bus-name" x="608" y="295">address</text>
           <text id="t-bus-data" class="bus-val" x="608" y="379"></text>
           <text class="bus-name" x="608" y="410">data</text>
-          <text id="t-bus-internal" class="bus-val" x="445" y="34"></text>
+          <text id="t-bus-internal" class="bus-val start" x="452" y="42"></text>
           <text class="bus-name" x="545" y="482">I/O bus</text>
           <text class="bus-name vertical" x="436" y="272" transform="rotate(-90 436 272)">internal bus</text>
 
@@ -198,7 +198,7 @@
             <text class="mhead" x="680" y="58">Address</text>
             <text class="mhead mid" x="820" y="58">Contents</text>
             <text class="mhead" x="915" y="58">Decimal</text>
-            <text class="mhead" x="972" y="58">Instruction</text>
+            <text class="mhead" x="972" y="58">Instruction / data</text>
             <g id="mem-rows"></g>
           </g>
 
@@ -233,7 +233,7 @@
       <p class="hint">16 rows, 8 bits each. To change a row, click its contents and type 8 binary digits.</p>
       <div class="mem-table-wrap">
         <table class="mem-table" id="mem-table">
-          <thead><tr><th>#</th><th>Address</th><th>Contents</th><th>Decimal</th><th>Instruction</th></tr></thead>
+          <thead><tr><th>#</th><th>Address</th><th>Contents</th><th>Decimal</th><th>Instructions / data</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -288,7 +288,7 @@
         </ul>
         <h3>The instruction cycle</h3>
         <ol>
-          <li><b>Fetch:</b> <code>PC → MAR</code>, <code>content of cell MAR → MDR</code>, <code>MDR → IR</code>, <code>PC + 1 → PC</code></li>
+          <li><b>Fetch:</b> <code>MAR ← PC</code>, <code>MDR ← content of cell MAR</code>, <code>IR ← MDR</code>, <code>PC ← PC + 1</code> (read <b>←</b> as "gets": the register on the left gets the value on the right)</li>
           <li><b>Decode:</b> the control unit reads the op code in IR.</li>
           <li><b>Execute:</b> the steps listed in the table for that instruction.</li>
         </ol>
@@ -318,10 +318,15 @@ ZERO:   .DATA   0         -- a data cell holding 0
     </div>
   </section>
 
+  <footer class="site-footer">
+    © 2026 CENG 111 · Department of Computer Engineering, Middle East Technical University ·
+    Contact: <a href="mailto:derkan@ceng.metu.edu.tr">derkan@ceng.metu.edu.tr</a>
+  </footer>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="js/core.js?v=3"></script>
-  <script src="js/examples.js?v=3"></script>
-  <script src="js/ui.js?v=3"></script>
+  <script src="js/core.js?v=4"></script>
+  <script src="js/examples.js?v=4"></script>
+  <script src="js/ui.js?v=4"></script>
 </body>
 </html>

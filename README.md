@@ -21,24 +21,25 @@ It follows the course textbook, Schneider & Gersting, *Invitation to Computer Sc
 
 | Op code | Instruction | Meaning | Execute steps |
 |---|---|---|---|
-| 0000 | `LOAD X` | content of X → R | IR(address) → MAR; content of cell MAR → MDR; MDR → R |
-| 0001 | `STORE X` | R → content of X | IR(address) → MAR; R → MDR; MDR → content of cell MAR |
-| 0010 | `CLEAR X` | 0 → content of X | IR(address) → MAR; 0 → MDR; MDR → content of cell MAR |
-| 0011 | `ADD X` | R + content of X → R | IR(address) → MAR; content of cell MAR → MDR; R + MDR → R |
-| 0100 | `INCREMENT X` | content of X + 1 → content of X | IR(address) → MAR; content of cell MAR → MDR; MDR + 1 → MDR; MDR → content of cell MAR |
-| 0101 | `SUBTRACT X` | R − content of X → R | IR(address) → MAR; content of cell MAR → MDR; R − MDR → R |
-| 0110 | `DECREMENT X` | content of X − 1 → content of X | IR(address) → MAR; content of cell MAR → MDR; MDR − 1 → MDR; MDR → content of cell MAR |
-| 0111 | `COMPARE X` | sets GT/EQ/LT from content of X vs R | IR(address) → MAR; content of cell MAR → MDR; compare MDR with R |
-| 1000 | `JUMP X` | X → PC | IR(address) → PC |
-| 1001 | `JUMPGT X` | if GT = 1 then X → PC | if GT = 1 then IR(address) → PC |
-| 1010 | `JUMPEQ X` | if EQ = 1 then X → PC | if EQ = 1 then IR(address) → PC |
-| 1011 | `JUMPLT X` | if LT = 1 then X → PC | if LT = 1 then IR(address) → PC |
-| 1100 | `JUMPNEQ X` | if EQ = 0 then X → PC | if EQ = 0 then IR(address) → PC |
-| 1101 | `IN X` | input → content of X | IR(address) → MAR; input → MDR; MDR → content of cell MAR |
-| 1110 | `OUT X` | content of X → output | IR(address) → MAR; content of cell MAR → MDR; MDR → output |
+| 0000 | `LOAD X` | R ← content of X | MAR ← IR(address); MDR ← content of cell MAR; R ← MDR |
+| 0001 | `STORE X` | content of X ← R | MAR ← IR(address); MDR ← R; content of cell MAR ← MDR |
+| 0010 | `CLEAR X` | content of X ← 0 | MAR ← IR(address); MDR ← 0; content of cell MAR ← MDR |
+| 0011 | `ADD X` | R ← R + content of X | MAR ← IR(address); MDR ← content of cell MAR; R ← R + MDR |
+| 0100 | `INCREMENT X` | content of X ← content of X + 1 | MAR ← IR(address); MDR ← content of cell MAR; MDR ← MDR + 1; content of cell MAR ← MDR |
+| 0101 | `SUBTRACT X` | R ← R − content of X | MAR ← IR(address); MDR ← content of cell MAR; R ← R − MDR |
+| 0110 | `DECREMENT X` | content of X ← content of X − 1 | MAR ← IR(address); MDR ← content of cell MAR; MDR ← MDR − 1; content of cell MAR ← MDR |
+| 0111 | `COMPARE X` | sets GT/EQ/LT from content of X vs R | MAR ← IR(address); MDR ← content of cell MAR; GT, EQ, LT ← compare MDR with R |
+| 1000 | `JUMP X` | PC ← X | PC ← IR(address) |
+| 1001 | `JUMPGT X` | if GT = 1 then PC ← X | if GT = 1 then PC ← IR(address) |
+| 1010 | `JUMPEQ X` | if EQ = 1 then PC ← X | if EQ = 1 then PC ← IR(address) |
+| 1011 | `JUMPLT X` | if LT = 1 then PC ← X | if LT = 1 then PC ← IR(address) |
+| 1100 | `JUMPNEQ X` | if EQ = 0 then PC ← X | if EQ = 0 then PC ← IR(address) |
+| 1101 | `IN X` | content of X ← input | MAR ← IR(address); MDR ← input; content of cell MAR ← MDR |
+| 1110 | `OUT X` | output ← content of X | MAR ← IR(address); MDR ← content of cell MAR; output ← MDR |
 | 1111 | `HALT` | stop | stop |
 
-**Fetch** (the same for every instruction): `PC → MAR`, `content of cell MAR → MDR`, `MDR → IR`, `PC + 1 → PC`.
+**Fetch** (the same for every instruction): `MAR ← PC`, `MDR ← content of cell MAR`, `IR ← MDR`, `PC ← PC + 1`.
+Assignments are written right to left: `PC ← PC + 1` means PC gets the value PC + 1.
 After fetch comes **decode**: the instruction decoder reads the op code.
 
 **Assembly language** (the textbook's syntax):

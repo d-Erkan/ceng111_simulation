@@ -29,6 +29,8 @@
   const state = {
     format: 'bin',
     loadedWords: new Array(VN.MEM_SIZE).fill(0),
+    // what each memory row holds in the loaded program: { kind: 'instruction' | 'data' | 'unused', label }
+    rowInfo: new Array(VN.MEM_SIZE).fill(null).map(() => ({ kind: 'unused', label: '' })),
     history: [], // [{ snap, traceLen, traceOffset, lastRec }]
     trace: [],
     traceOffset: 0,
@@ -136,11 +138,29 @@
       return false;
     }
     state.loadedWords = asm.words.slice();
+    state.rowInfo = rowInfoOf(asm);
     resetMachine();
     const last = asm.listing.length ? asm.listing[asm.listing.length - 1].addr : 0;
     setMsg($('#asm-msg'), `✓ The program is in memory (cells 0–${last}). Press "Next step" to start.`, 'ok');
     saveStore();
     return true;
+  }
+
+  /** Which rows hold instructions, which hold data (with their label, e.g. "data A") and which are not used. */
+  function rowInfoOf(asm) {
+    const labelAt = {};
+    for (const [name, addr] of Object.entries(asm.symbols || {})) if (!(addr in labelAt)) labelAt[addr] = name;
+    const info = new Array(VN.MEM_SIZE).fill(null).map(() => ({ kind: 'unused', label: '' }));
+    for (const l of asm.listing) info[l.addr] = { kind: l.kind || 'instruction', label: labelAt[l.addr] || '' };
+    return info;
+  }
+
+  /** The text of the "Instruction / data" column for a row. */
+  function rowMeaning(i, v, isPc) {
+    const info = state.rowInfo[i];
+    if (isPc || info.kind === 'instruction') return VN.disassemble(v);
+    if (info.kind === 'data') return info.label ? `data ${info.label}` : 'data';
+    return v === 0 ? '' : 'data'; // an unused row that the program has written into
   }
 
   function applyInputField() {
@@ -373,7 +393,7 @@
         const v = parseUserValue(inp.value, 'word', 'bin');
         if (v === null || inp.value.replace(/\s/g, '').length !== VN.WORD_BITS) {
           inp.classList.add('invalid');
-          toast(`Cell ${i}: type exactly 8 binary digits, e.g. 0011 0101.`);
+          toast(`Row ${i}: type exactly 8 binary digits, e.g. 0011 0101.`);
           return;
         }
         inp.classList.remove('invalid');
@@ -435,7 +455,9 @@
     $('#t-bus-internal').textContent = bus.internal !== undefined ? fmt(bus.internal, bus.internalKind) : '';
     $('#t-bus-addr').textContent = bus.address !== undefined ? fmtAddr(bus.address) : '';
     $('#t-bus-data').textContent = bus.data !== undefined ? fmtWord(bus.data) : '';
-    $('#t-bus-ctrl').textContent = bus.control || '';
+    const ctrl = $('#t-bus-ctrl');
+    ctrl.textContent = bus.control ? `control signal: ${bus.control}` : 'control signal: none';
+    ctrl.classList.toggle('on', !!bus.control);
 
     // Memory (diagram + editor). Addresses and contents are always shown in binary, with the decimal value beside.
     const written = new Set(((rec && rec.memWrites) || []).map((w) => w.addr));
@@ -446,21 +468,23 @@
       const row = $(`#m-${i}`);
       row.querySelector('.mword').textContent = VN.wordBin(v);
       row.querySelector('.mdec').textContent = String(v);
-      row.querySelector('.mdis').textContent = VN.disassemble(v);
+      const unused = state.rowInfo[i].kind === 'unused' && v === 0 && !isPc;
+      row.querySelector('.mdis').textContent = rowMeaning(i, v, isPc);
       row.querySelector('.pc-mark').textContent = isPc ? '◀ PC' : '';
-      row.setAttribute('class', `mrow${isPc ? ' pc' : ''}${isAccess ? ' access' : ''}${written.has(i) ? ' written' : ''}`);
+      row.setAttribute('class', `mrow${isPc ? ' pc' : ''}${isAccess ? ' access' : ''}${written.has(i) ? ' written' : ''}${unused ? ' unused' : ''}`);
       setTitle(row, `cell ${i}: ${allForms(v, 'word')}`);
 
       const tr = $(`#mt-${i}`);
       tr.classList.toggle('pc', isPc);
       tr.classList.toggle('access', isAccess);
+      tr.classList.toggle('unused', unused);
       const inp = tr.querySelector('input');
       if (document.activeElement !== inp) {
         inp.value = VN.wordBin(v);
         inp.classList.remove('invalid');
       }
       tr.querySelector('.num').textContent = String(v);
-      tr.querySelector('.dis').innerHTML = `${esc(VN.disassemble(v))}${isPc ? ' <span class="pc-tag">◀ PC</span>' : ''}`;
+      tr.querySelector('.dis').innerHTML = `${esc(rowMeaning(i, v, isPc) || 'not used')}${isPc ? ' <span class="pc-tag">◀ PC</span>' : ''}`;
     }
 
     // I/O.

@@ -31,26 +31,26 @@
 
   // Op codes and meanings as in the textbook's instruction set.
   const INSTRUCTIONS = [
-    { opcode: 0, name: 'LOAD', meaning: 'content of X → R', summary: 'Load register R with the content of memory cell X.' },
-    { opcode: 1, name: 'STORE', meaning: 'R → content of X', summary: 'Store register R into memory cell X.' },
-    { opcode: 2, name: 'CLEAR', meaning: '0 → content of X', summary: 'Set memory cell X to 0.' },
-    { opcode: 3, name: 'ADD', meaning: 'R + content of X → R', summary: 'Add the content of memory cell X to R.' },
-    { opcode: 4, name: 'INCREMENT', meaning: 'content of X + 1 → content of X', summary: 'Add 1 to memory cell X.' },
-    { opcode: 5, name: 'SUBTRACT', meaning: 'R − content of X → R', summary: 'Subtract the content of memory cell X from R.' },
-    { opcode: 6, name: 'DECREMENT', meaning: 'content of X − 1 → content of X', summary: 'Subtract 1 from memory cell X.' },
+    { opcode: 0, name: 'LOAD', meaning: 'R ← content of X', summary: 'Load register R with the content of memory cell X.' },
+    { opcode: 1, name: 'STORE', meaning: 'content of X ← R', summary: 'Store register R into memory cell X.' },
+    { opcode: 2, name: 'CLEAR', meaning: 'content of X ← 0', summary: 'Set memory cell X to 0.' },
+    { opcode: 3, name: 'ADD', meaning: 'R ← R + content of X', summary: 'Add the content of memory cell X to R.' },
+    { opcode: 4, name: 'INCREMENT', meaning: 'content of X ← content of X + 1', summary: 'Add 1 to memory cell X.' },
+    { opcode: 5, name: 'SUBTRACT', meaning: 'R ← R − content of X', summary: 'Subtract the content of memory cell X from R.' },
+    { opcode: 6, name: 'DECREMENT', meaning: 'content of X ← content of X − 1', summary: 'Subtract 1 from memory cell X.' },
     {
       opcode: 7,
       name: 'COMPARE',
       meaning: 'compare content of X with R',
       summary: 'Set the condition codes: GT = 1 if content of X > R, EQ = 1 if content of X = R, LT = 1 if content of X < R (the other two become 0).',
     },
-    { opcode: 8, name: 'JUMP', meaning: 'X → PC', summary: 'Jump: the next instruction is taken from cell X.' },
-    { opcode: 9, name: 'JUMPGT', meaning: 'if GT = 1 then X → PC', summary: 'Jump to X if the last COMPARE found content of X > R.' },
-    { opcode: 10, name: 'JUMPEQ', meaning: 'if EQ = 1 then X → PC', summary: 'Jump to X if the last COMPARE found them equal.' },
-    { opcode: 11, name: 'JUMPLT', meaning: 'if LT = 1 then X → PC', summary: 'Jump to X if the last COMPARE found content of X < R.' },
-    { opcode: 12, name: 'JUMPNEQ', meaning: 'if EQ = 0 then X → PC', summary: 'Jump to X if the last COMPARE found them different.' },
-    { opcode: 13, name: 'IN', meaning: 'input → content of X', summary: 'Read the next input value into memory cell X.' },
-    { opcode: 14, name: 'OUT', meaning: 'content of X → output', summary: 'Print the content of memory cell X.' },
+    { opcode: 8, name: 'JUMP', meaning: 'PC ← X', summary: 'Jump: the next instruction is taken from cell X.' },
+    { opcode: 9, name: 'JUMPGT', meaning: 'if GT = 1 then PC ← X', summary: 'Jump to X if the last COMPARE found content of X > R.' },
+    { opcode: 10, name: 'JUMPEQ', meaning: 'if EQ = 1 then PC ← X', summary: 'Jump to X if the last COMPARE found them equal.' },
+    { opcode: 11, name: 'JUMPLT', meaning: 'if LT = 1 then PC ← X', summary: 'Jump to X if the last COMPARE found content of X < R.' },
+    { opcode: 12, name: 'JUMPNEQ', meaning: 'if EQ = 0 then PC ← X', summary: 'Jump to X if the last COMPARE found them different.' },
+    { opcode: 13, name: 'IN', meaning: 'content of X ← input', summary: 'Read the next input value into memory cell X.' },
+    { opcode: 14, name: 'OUT', meaning: 'output ← content of X', summary: 'Print the content of memory cell X.' },
     { opcode: 15, name: 'HALT', meaning: 'stop', summary: 'Stop the machine. (The address field is not used.)', noOperand: true },
   ];
   const BY_NAME = Object.fromEntries(INSTRUCTIONS.map((i) => [i.name, i]));
@@ -76,26 +76,26 @@
   };
   const FETCH_PLAN = [['PC_TO_MAR'], ['FETCH'], ['MDR_TO_IR'], ['PC_INC']];
 
-  /** Short register-transfer text of a micro-operation, in the textbook's "source → destination" style. */
+  /** Short register-transfer text of a micro-operation, written right to left: "destination ← source". */
   function microText(op, param) {
     switch (op) {
-      case 'PC_TO_MAR': return 'PC → MAR';
-      case 'FETCH': return 'content of cell MAR → MDR   (fetch)';
-      case 'MDR_TO_IR': return 'MDR → IR';
-      case 'PC_INC': return 'PC + 1 → PC';
+      case 'PC_TO_MAR': return 'MAR ← PC';
+      case 'FETCH': return 'MDR ← content of cell MAR   (fetch)';
+      case 'MDR_TO_IR': return 'IR ← MDR';
+      case 'PC_INC': return 'PC ← PC + 1';
       case 'DECODE': return 'decode IR';
-      case 'ADDR_TO_MAR': return 'IR(address) → MAR';
-      case 'MDR_TO_R': return 'MDR → R';
-      case 'R_TO_MDR': return 'R → MDR';
-      case 'ZERO_TO_MDR': return '0 → MDR';
-      case 'STORE': return 'MDR → content of cell MAR   (store)';
-      case 'ALU_R': return param === 'ADD' ? 'R + MDR → R' : 'R − MDR → R';
-      case 'ALU_MDR': return param === 'INC' ? 'MDR + 1 → MDR' : 'MDR − 1 → MDR';
-      case 'ALU_COMPARE': return 'compare MDR with R → GT, EQ, LT';
-      case 'JUMP': return 'IR(address) → PC';
-      case 'JUMP_IF': return param === 'NEQ' ? 'if EQ = 0 then IR(address) → PC' : `if ${param} = 1 then IR(address) → PC`;
-      case 'INPUT_TO_MDR': return 'input → MDR';
-      case 'MDR_TO_OUTPUT': return 'MDR → output';
+      case 'ADDR_TO_MAR': return 'MAR ← IR(address)';
+      case 'MDR_TO_R': return 'R ← MDR';
+      case 'R_TO_MDR': return 'MDR ← R';
+      case 'ZERO_TO_MDR': return 'MDR ← 0';
+      case 'STORE': return 'content of cell MAR ← MDR   (store)';
+      case 'ALU_R': return param === 'ADD' ? 'R ← R + MDR' : 'R ← R − MDR';
+      case 'ALU_MDR': return param === 'INC' ? 'MDR ← MDR + 1' : 'MDR ← MDR − 1';
+      case 'ALU_COMPARE': return 'GT, EQ, LT ← compare MDR with R';
+      case 'JUMP': return 'PC ← IR(address)';
+      case 'JUMP_IF': return param === 'NEQ' ? 'if EQ = 0 then PC ← IR(address)' : `if ${param} = 1 then PC ← IR(address)`;
+      case 'INPUT_TO_MDR': return 'MDR ← input';
+      case 'MDR_TO_OUTPUT': return 'output ← MDR';
       case 'HALT': return 'stop';
       default: return op;
     }
@@ -626,7 +626,8 @@
    *   .END                        -- optional last line
    *
    * Comments start with -- (or ;). Operands: a label, a cell number (0–15), or label+n / label-n.
-   * Returns { words, errors: [{ line, message }], listing: [{ addr, word, line, source }], symbols }.
+   * Returns { words, errors: [{ line, message }], listing: [{ addr, word, line, source, kind }], symbols }
+   * (kind: 'data' for a .DATA cell, 'instruction' otherwise).
    */
   function assemble(source) {
     const errors = [];
@@ -715,7 +716,7 @@
         word = encode(it.ins.opcode, address);
       }
       words[it.addr] = word;
-      listing.push({ addr: it.addr, word, line: it.line, source: it.source });
+      listing.push({ addr: it.addr, word, line: it.line, source: it.source, kind: it.kind === 'data' ? 'data' : 'instruction' });
     }
     errors.sort((a, b) => a.line - b.line);
     return { words, errors, listing, symbols };

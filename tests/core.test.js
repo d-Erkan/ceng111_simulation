@@ -62,20 +62,20 @@ test('assembler rejects programs longer than 16 cells', () => {
   assert.match(asm.errors[0].message, /does not fit/);
 });
 
-test('fetch is PC → MAR, fetch, MDR → IR, PC + 1 → PC, then decode', () => {
+test('fetch is MAR ← PC, fetch, IR ← MDR, PC ← PC + 1, then decode', () => {
   const m = machineFor('LOAD X\nHALT\nX: .DATA 9');
   const recs = m.stepInstruction();
   assert.deepEqual(
     recs.map((r) => `${r.phase} ${r.rtl}`),
     [
-      'FETCH PC → MAR',
-      'FETCH content of cell MAR → MDR   (fetch)',
-      'FETCH MDR → IR',
-      'FETCH PC + 1 → PC',
+      'FETCH MAR ← PC',
+      'FETCH MDR ← content of cell MAR   (fetch)',
+      'FETCH IR ← MDR',
+      'FETCH PC ← PC + 1',
       'DECODE decode IR',
-      'EXECUTE IR(address) → MAR',
-      'EXECUTE content of cell MAR → MDR   (fetch)',
-      'EXECUTE MDR → R',
+      'EXECUTE MAR ← IR(address)',
+      'EXECUTE MDR ← content of cell MAR   (fetch)',
+      'EXECUTE R ← MDR',
     ],
   );
   assert.deepEqual(m.registers(), { pc: 1, mar: 2, mdr: 9, ir: VN.encode(op('LOAD'), 2), r: 9, gt: 0, eq: 0, lt: 0 });
