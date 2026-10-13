@@ -123,6 +123,12 @@ body.demo .machine .controls, body.demo .machine .practice-bar { opacity: .35; p
 .demo-progress { height: 6px; background: var(--panel); border-radius: 99px; overflow: hidden; margin: 10px 0 8px; }
 .demo-progress span { display: block; height: 100%; background: var(--fetch); transition: width .3s; }
 .demo-card .btn-row button.primary { background: var(--fetch); border-color: var(--fetch); }
+.demo-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin: 10px 0; }
+.demo-choice { white-space: normal; height: auto; text-align: left; padding: 12px 14px; border: 2px solid var(--fetch); border-radius: 10px; background: var(--panel); cursor: pointer; line-height: 1.4; }
+.demo-choice b { display: block; font-size: 16px; color: var(--fetch); margin-bottom: 4px; }
+.demo-choice span { display: block; font-size: 13.5px; color: var(--text); }
+.demo-choice:hover, .demo-choice:focus-visible { background: var(--fetch); }
+.demo-choice:hover b, .demo-choice:hover span, .demo-choice:focus-visible b, .demo-choice:focus-visible span { color: #fff; }
 .btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
 .btn-row.small button { font-size: 12.5px; padding: 4px 8px; }
 .toggle { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }

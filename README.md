@@ -61,9 +61,10 @@ The whole instruction set is defined in `js/core.js`: `INSTRUCTIONS` (op codes a
 
 ![Demo: the machine running a = b + c](docs/demo.gif)
 
-- **Guided demo:** on the first visit, a short demo runs the `a = b + c` example on the real diagram with an
-  explanation at every step (the first instruction step by step, then one instruction at a time). The
-  **▶ Watch demo** button replays it. `docs/demo.gif` is a recording of it, for announcements.
+- **Guided demos:** on the first visit, students choose one of two short demos that run on the real diagram with
+  an explanation at every step: `a = b + c` (the first instruction step by step, then one instruction at a time) or
+  a **loop** that adds 1 + 2 + … + 5 (the first iteration instruction by instruction, then one iteration at a time,
+  then the exit from the loop). The **▶ Watch demo** button brings the choice back. `docs/demo.gif` is a recording of it, for announcements.
 - **Datapath diagram:** the active components light up, the buses carrying data are animated, and each bus shows
   its value. The control bus shows the FETCH or STORE signal.
 - **An explanation of every step** in plain language, with the register-transfer notation and a table of what
@@ -76,7 +77,7 @@ The whole instruction set is defined in `js/core.js`: `INSTRUCTIONS` (op codes a
   check their answers, see the correct ones, and see the steps that happened.
 - **Execution trace:** one row per step or per instruction, exportable to CSV (useful for answer keys).
 - **Numbers in binary or decimal**, a choice made at the top of the page.
-- **Seven example programs**, including the slides' `a = b + c`, `A = B + C − 7` and "sum of numbers"
+- **Eight example programs**, including a loop (1 + 2 + … + 5), the slides' `a = b + c`, `A = B + C − 7` and "sum of numbers"
   programs (the sum stops at 0, because the machine has no negative numbers).
 - Works offline: open `index.html` directly from disk.
 

@@ -637,12 +637,16 @@
   }
 
   // ------------------------------------------------------------------------------------------------ guided demo
-  // A short, self-running walkthrough on the real diagram: the "a = b + c" example, the first instruction step by
-  // step, then the other instructions one at a time. It starts by itself on the first visit; "Watch demo" replays it.
+  // Short, self-running walkthroughs on the real diagram. Students choose one of two demos:
+  //   - "add":  the "a = b + c" example, the first instruction step by step, then the others one at a time;
+  //   - "loop": 1 + 2 + 3 + 4 + 5 with a loop (5 iterations), the first iteration instruction by instruction,
+  //             then one whole iteration at a time, then the exit from the loop.
+  // The choice appears by itself on the first visit; "Watch demo" brings it back.
   const DEMO_SEEN_KEY = 'ceng111-demo-seen';
   const PHASE_WORD = { FETCH: 'Fetch', DECODE: 'Decode', EXECUTE: 'Execute' };
 
-  function demoFrames() {
+  function demoFrames(kind) {
+    if (kind === 'loop') return loopDemoFrames();
     const frames = [
       {
         ms: 7000,
@@ -666,14 +670,72 @@
     return frames;
   }
 
+  // The loop demo: SUM (cell 9) = 1 + 2 + 3 + 4 + 5, I (cell 10) counts 1 … 6, LIMIT (cell 11) = 6.
+  const LOOP_DEMO = { sum: 9, i: 10, limit: 11, loopStart: 0, exitAt: 7, bodyLength: 7, iterations: 5 };
+  const LOOP_NOTES = [
+    'This is the start of the loop body (address 0000). R gets the running total SUM.',
+    'R becomes SUM + I.',
+    'The new total goes back into SUM: <b>the memory changes</b>.',
+    'I goes up by one: the next number to add.',
+    'R gets I, so that it can be compared with LIMIT.',
+    'COMPARE sets the condition codes: GT = 1 means LIMIT &gt; I, so there are more numbers to add.',
+    'GT is 1, so JUMPGT puts 0000 into PC: the next instruction is the first one of the loop again. <b>This jump backwards is what makes a loop.</b>',
+  ];
+
+  function loopDemoFrames() {
+    const frames = [
+      {
+        ms: 7000,
+        title: 'A loop: 1 + 2 + 3 + 4 + 5',
+        text: 'This program adds the numbers 1 to 5 and prints the sum. Cells 0–8 hold the <b>instructions</b>; cell 9 is <b>SUM</b> (the running total, starts at 0), cell 10 is <b>I</b> (the number to add, starts at 1) and cell 11 is <b>LIMIT</b> (6).',
+      },
+      {
+        ms: 8000,
+        title: 'The same instructions, again and again',
+        text: 'Instructions 0–6 are the <b>loop body</b>. At the end of the body, <b>JUMPGT</b> sends the machine back to address 0000 as long as LIMIT &gt; I. So the body runs <b>5 times</b> (I = 1, 2, 3, 4, 5). Watch PC: it goes 0, 1, 2, … 6, and then back to 0.',
+      },
+    ];
+    for (let n = 1; n <= LOOP_DEMO.bodyLength; n++) frames.push({ ms: 6500, action: 'instr', loop: true, n });
+    for (let k = 2; k <= LOOP_DEMO.iterations; k++) frames.push({ ms: 6000, action: 'iter', k });
+    frames.push({ ms: 6000, action: 'instr', loop: true, n: 8 });
+    frames.push({ ms: 5000, action: 'instr', loop: true, n: 9 });
+    frames.push({
+      ms: 0,
+      tag: 'Finished',
+      title: 'Your turn!',
+      text: 'The loop body ran 5 times (5 × 7 = 35 instructions), then OUT and HALT: <b>37 instructions</b> in total, and the machine printed <b>15</b>. Try it yourself: choose example 8 in <b>Examples</b>, press <b>⟲ Reset</b> and step through it. A good exercise: what are SUM and I after 3 iterations? Turn on <b>Practice mode</b> to check your predictions.',
+    });
+    return frames;
+  }
+
+  /** Runs one whole iteration of the loop demo: until PC is back at the loop start, or leaves the loop. */
+  function runIteration() {
+    const recs = [];
+    for (let guard = 0; guard < 50; guard++) {
+      const r = doInstruction();
+      if (!r.length) break;
+      recs.push(...r);
+      if (machine.halted || machine.pc === LOOP_DEMO.loopStart || machine.pc === LOOP_DEMO.exitAt) break;
+    }
+    return recs;
+  }
+
+  // First the choice between the two demos, then the chosen one.
   function startDemo(auto) {
     stopRun();
     if (state.practice) setPractice(false);
     const restore = auto ? null : { src: $('#asm-src').value, input: $('#input-values').value };
-    state.demo = { frames: demoFrames(), i: -1, paused: false, timer: null, restore };
+    state.demo = { choosing: true, frames: [], i: -1, paused: false, timer: null, restore };
     document.body.classList.add('demo');
-    loadExample('add');
     $('.machine').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    render();
+  }
+
+  function runDemo(kind) {
+    const d = state.demo;
+    if (!d) return;
+    Object.assign(d, { choosing: false, kind, frames: demoFrames(kind), i: -1, paused: false });
+    loadExample(kind === 'loop' ? 'loop' : 'add');
     nextDemoFrame();
   }
 
@@ -690,6 +752,8 @@
     } else if (f.action === 'instr') {
       const recs = doInstruction();
       f.recs = recs;
+    } else if (f.action === 'iter') {
+      f.recs = runIteration();
     }
     render();
     scheduleDemo();
@@ -729,6 +793,30 @@
         text: richText(r.text),
       };
     }
+    if (f.action === 'instr' && f.loop) {
+      const last = f.recs[f.recs.length - 1];
+      const name = VN.disassemble(machine.ir);
+      const note = f.n <= LOOP_DEMO.bodyLength ? LOOP_NOTES[f.n - 1] : f.n === 8 ? 'The loop is over, so the program continues after it: the sum is printed.' : 'The machine stops.';
+      const ins = VN.INSTRUCTIONS[VN.opcodeOf(machine.ir)];
+      const x = VN.addressOf(machine.ir);
+      const label = { 0: 'LOOP', 9: 'SUM', 10: 'I', 11: 'LIMIT' }[x];
+      return {
+        tag: f.n <= LOOP_DEMO.bodyLength ? `Iteration 1 · instruction ${f.n} of ${LOOP_DEMO.bodyLength}` : 'After the loop',
+        title: ins.noOperand || !label ? esc(name) : `${esc(ins.name)} ${label} <small>(cell ${x})</small>`,
+        text: `${note} <span class="demo-rtl">${esc(last.rtl.replace(/\s+\(.*\)$/, ''))}</span><br>${richText(last.text)}`,
+      };
+    }
+    if (f.action === 'iter') {
+      const m = machine.mem;
+      const left = machine.pc === LOOP_DEMO.exitAt;
+      return {
+        tag: `Iteration ${f.k} of ${LOOP_DEMO.iterations} · ${LOOP_DEMO.bodyLength} instructions at once`,
+        title: `Iteration ${f.k}: SUM = ${m[LOOP_DEMO.sum]}, I = ${m[LOOP_DEMO.i]}`,
+        text: left
+          ? `The same 7 instructions ran again: SUM became <b>${m[LOOP_DEMO.sum]}</b> and I became <b>${m[LOOP_DEMO.i]}</b>. But now I = LIMIT = ${m[LOOP_DEMO.limit]}, so COMPARE gives GT = 0 and EQ = 1. <b>JUMPGT does not jump</b>: PC simply goes on to 0111, and the loop ends.`
+          : `The same 7 instructions ran again (addresses 0000–0110): SUM became <b>${m[LOOP_DEMO.sum]}</b> and I became <b>${m[LOOP_DEMO.i]}</b>. LIMIT (${m[LOOP_DEMO.limit]}) is still greater than I, so GT = 1 and JUMPGT sent PC back to <b>0000</b> for another iteration.`,
+      };
+    }
     if (f.action === 'instr') {
       const last = f.recs[f.recs.length - 1];
       const name = VN.disassemble(machine.ir);
@@ -743,6 +831,24 @@
 
   function renderDemo(box) {
     const d = state.demo;
+    if (d.choosing) {
+      box.className = 'explain ph-DEMO';
+      box.dataset.view = 'demo';
+      box.innerHTML = `<div class="demo-card">
+      <div class="demo-top"><span class="demo-tag">▶ DEMO · Choose a demo</span></div>
+      <h3>Watch the machine run a program</h3>
+      <p>Pick a demo. It runs by itself with an explanation at every step; you can pause it or go faster with <b>Next</b>.</p>
+      <div class="demo-choices">
+        <button id="demo-add" class="demo-choice"><b>1. a = b + c</b><span>One instruction step by step (fetch, decode, execute), then the rest of a 5-instruction program. About 1.5 minutes.</span></button>
+        <button id="demo-loop" class="demo-choice"><b>2. A loop: 1 + 2 + 3 + 4 + 5</b><span>The same instructions run 5 times; JUMPGT jumps back until the loop ends. About 1.5 minutes.</span></button>
+      </div>
+      <div class="btn-row"><button id="demo-close">✕ Skip demo</button></div>
+    </div>`;
+      box.querySelector('#demo-add').onclick = () => runDemo('add');
+      box.querySelector('#demo-loop').onclick = () => runDemo('loop');
+      box.querySelector('#demo-close').onclick = endDemo;
+      return;
+    }
     const f = d.frames[Math.max(0, d.i)];
     const c = demoCaption(f);
     const last = d.i >= d.frames.length - 1;
@@ -754,7 +860,7 @@
       <p>${c.text}</p>
       <div class="demo-progress"><span style="width:${Math.round(((d.i + 1) / d.frames.length) * 100)}%"></span></div>
       <div class="btn-row">
-        ${last ? '<button id="demo-close" class="primary">Start working ▶</button>' : `<button id="demo-pause">${d.paused ? '▶ Continue' : '❚❚ Pause'}</button><button id="demo-next" class="primary">Next ▶</button><button id="demo-close">✕ Skip demo</button>`}
+        ${last ? `<button id="demo-close" class="primary">Start working ▶</button><button id="demo-other">▶ Watch the ${d.kind === 'loop' ? 'a = b + c' : 'loop'} demo</button>` : `<button id="demo-pause">${d.paused ? '▶ Continue' : '❚❚ Pause'}</button><button id="demo-next" class="primary">Next ▶</button><button id="demo-close">✕ Skip demo</button>`}
       </div>
     </div>`;
     const on = (id, fn) => {
@@ -762,6 +868,7 @@
       if (b) b.onclick = fn;
     };
     on('#demo-close', endDemo);
+    on('#demo-other', () => runDemo(d.kind === 'loop' ? 'add' : 'loop'));
     on('#demo-next', nextDemoFrame);
     on('#demo-pause', () => {
       d.paused = !d.paused;

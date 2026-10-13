@@ -161,6 +161,29 @@ ARR:    .DATA   10
 `,
     },
     {
+      id: 'loop',
+      title: '8. Loop: 1 + 2 + 3 + 4 + 5 (JUMPGT goes back)',
+      input: '',
+      expected: [15],
+      source: `.BEGIN
+-- Adds 1 + 2 + 3 + 4 + 5 with a loop and prints the sum (15).
+-- The loop body (addresses 0-6) runs 5 times; JUMPGT jumps back to LOOP while LIMIT > I.
+LOOP:   LOAD    SUM     -- R = SUM
+        ADD     I       -- R = SUM + I
+        STORE   SUM     -- SUM = SUM + I
+        INCREMENT I     -- I = I + 1: the next number
+        LOAD    I       -- R = I
+        COMPARE LIMIT   -- compare LIMIT with R: GT = 1 if LIMIT > I
+        JUMPGT  LOOP    -- more numbers to add? go back
+        OUT     SUM     -- print the sum
+        HALT
+SUM:    .DATA   0
+I:      .DATA   1
+LIMIT:  .DATA   6
+.END
+`,
+    },
+    {
       id: 'blank',
       title: 'Empty program',
       input: '',
