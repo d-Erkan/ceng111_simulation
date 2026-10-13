@@ -169,8 +169,8 @@
           <text id="v-ALU" class="alu-op" x="252" y="322"></text>
           <g id="c-R" class="comp part-data reg">
             <rect x="100" y="370" width="140" height="62" rx="8"/>
-            <text class="name" x="110" y="387">R</text>
-            <text class="sub" x="124" y="387">holds a value</text>
+            <text class="name" x="110" y="387">Register (R)</text>
+            <text class="sub" x="110" y="401">holds a value</text>
             <text id="v-R" class="val" x="170" y="419"></text>
           </g>
 
@@ -219,7 +219,7 @@
       <p class="hint">16 cells, 8 bits each. To change a cell, click its contents and type 8 binary digits.</p>
       <div class="mem-table-wrap">
         <table class="mem-table" id="mem-table">
-          <thead><tr><th>#</th><th>Address</th><th>Contents<small class="th-sub"><span class="op">Operation code (opcode)</span><span class="fld">+ Address field</span></small></th><th>Decimal</th><th>Instruction</th></tr></thead>
+          <thead><tr><th>#</th><th>Address</th><th>Contents<small class="th-sub"><span class="op">opcode</span> <span class="fld">Address field</span></small></th><th>Decimal</th><th>Instruction</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -267,7 +267,7 @@
             <b>IR</b> (instruction register): the instruction being executed.
             <b>MAR</b> (memory address register): the address sent to memory.
             <b>MDR</b> (memory data register): the value fetched from or stored into memory.
-            <b>R</b>: the register used by LOAD, STORE, ADD, SUBTRACT and COMPARE.</li>
+            <b>Register (R)</b>: the register used by LOAD, STORE, ADD, SUBTRACT and COMPARE.</li>
           <li><b>Condition codes GT, EQ, LT:</b> set only by COMPARE, and used by the conditional jumps.</li>
           <li><b>Numbers</b> are whole numbers from 0 to 255 (8 bits). If a result does not fit (for example 200 + 100, or 3 − 5), only the last 8 bits are kept: this is called <i>overflow</i>.</li>
           <li><b>content of X</b> means "the number stored in memory cell X".</li>

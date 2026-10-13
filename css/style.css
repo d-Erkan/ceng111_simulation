@@ -202,8 +202,8 @@ textarea { width: 100%; min-height: 400px; resize: vertical; padding: 8px; font-
 .mhead-line { stroke: var(--c-memory); stroke-width: 1; opacity: .6; }
 .mem-table th .th-sub .op { color: var(--c-ctrl); }
 .mem-table th .th-sub .fld { color: var(--c-memif); }
-.mem-table th .th-sub { font-weight: 600; font-size: 10.5px; display: block; line-height: 1.3; }
-.mem-table th .th-sub span { display: block; white-space: nowrap; }
+.mem-table th .th-sub { font-weight: 600; font-size: 10.5px; display: block; line-height: 1.3; white-space: nowrap; }
+.mem-table th .th-sub span { white-space: nowrap; }
 .mrow rect { fill: transparent; }
 #diagram .mrow text { font-family: var(--mono); font-size: 11.5px; }
 #diagram .mrow .mnum, #diagram .mrow .mdis, #diagram .mrow .mdec { fill: var(--muted); }
