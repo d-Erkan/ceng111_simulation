@@ -73,7 +73,7 @@ The whole instruction set is defined in `js/core.js`: `INSTRUCTIONS` (op codes a
 - **Stepping controls:** Next step, Next instruction, Run (four speeds), Undo and Reset.
 - **Automatic loading:** the program is put into memory as soon as it is typed or an example is chosen.
 - **Colour-coded parts** (control, memory interface, calculation, memory, I/O), explanations coloured by phase, and a light/dark switch.
-- **Memory editor:** 16 rows of 8 bits (written `0000 1001`), with the decimal value and the meaning as an instruction.
+- **Memory editor:** 16 rows of 8 bits (written `0000 1001`); each row is marked **I** (instruction) or **D** (data), with its decimal value and its meaning (e.g. `LOAD 9` or `data SUM`). Unused rows are greyed out.
 - **Practice mode:** before each instruction, students predict PC, IR, MAR, MDR, R and the condition codes, then
   check their answers, see the correct ones, and see the steps that happened.
 - **Execution trace:** one row per step or per instruction, exportable to CSV (useful for answer keys).

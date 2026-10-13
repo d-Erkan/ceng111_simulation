@@ -162,6 +162,13 @@
     return info;
   }
 
+  /** "I" for an instruction row, "D" for a data row, "" for a row the program does not use. */
+  function rowKindLetter(i, v, isPc) {
+    const kind = state.rowInfo[i].kind;
+    if (isPc || kind === 'instruction') return 'I';
+    return kind === 'data' || v !== 0 ? 'D' : '';
+  }
+
   /** The text of the "Instruction / data" column for a row. */
   function rowMeaning(i, v, isPc) {
     const info = state.rowInfo[i];
@@ -392,7 +399,7 @@
     for (let i = 0; i < VN.MEM_SIZE; i++) {
       const tr = document.createElement('tr');
       tr.id = `mt-${i}`;
-      tr.innerHTML = `<td class="rownum">${i}</td><td class="addr">${VN.toBin(i, VN.ADDR_BITS)}</td>
+      tr.innerHTML = `<td class="rownum">${i}</td><td class="kind"></td><td class="addr">${VN.toBin(i, VN.ADDR_BITS)}</td>
         <td><input type="text" maxlength="9" aria-label="Contents of row ${i}, 8 binary digits" spellcheck="false"></td>
         <td class="num"></td><td class="dis"></td>`;
       const inp = tr.querySelector('input');
@@ -485,6 +492,11 @@
       tr.classList.toggle('pc', isPc);
       tr.classList.toggle('access', isAccess);
       tr.classList.toggle('unused', unused);
+      const letter = rowKindLetter(i, v, isPc);
+      const kindCell = tr.querySelector('.kind');
+      kindCell.textContent = letter;
+      kindCell.className = `kind${letter ? ` k-${letter}` : ''}`;
+      kindCell.title = letter === 'I' ? 'instruction' : letter === 'D' ? 'data' : 'not used';
       const inp = tr.querySelector('input');
       if (document.activeElement !== inp) {
         inp.value = VN.wordBin(v);
